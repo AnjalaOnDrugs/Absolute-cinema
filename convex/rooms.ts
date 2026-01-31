@@ -8,7 +8,10 @@ export const createRoom = mutation({
         name: v.string(),
         movieTitle: v.string(),
         movieFileName: v.string(),
+        tmdbId: v.optional(v.number()),
+        moviePoster: v.optional(v.string()),
         isPublic: v.boolean(),
+        everyoneCanControl: v.boolean(),
     },
     handler: async (ctx, args) => {
         // Verify session
@@ -21,13 +24,18 @@ export const createRoom = mutation({
             throw new Error("Invalid session");
         }
 
+        console.log("Creating room for TMDB ID:", args.tmdbId);
+
         // Create the room
         const roomId = await ctx.db.insert("rooms", {
             name: args.name,
             movieTitle: args.movieTitle,
             movieFileName: args.movieFileName,
+            tmdbId: args.tmdbId,
+            moviePoster: args.moviePoster,
             adminId: session.userId,
             isPublic: args.isPublic,
+            everyoneCanControl: args.everyoneCanControl,
             createdAt: Date.now(),
         });
 
@@ -62,7 +70,6 @@ export const listPublicRooms = query({
     handler: async (ctx) => {
         const rooms = await ctx.db
             .query("rooms")
-            .withIndex("by_public", (q) => q.eq("isPublic", true))
             .collect();
 
         // Get admin info for each room
@@ -167,13 +174,16 @@ export const deleteRoom = mutation({
             throw new Error("Only the admin can delete this room");
         }
 
-        // Delete all room members
+        // Delete all room members and clear their currentRoomId
         const members = await ctx.db
             .query("roomMembers")
             .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
             .collect();
 
         for (const member of members) {
+            // Update user's current room
+            await ctx.db.patch(member.userId, { currentRoomId: undefined });
+            // Delete membership
             await ctx.db.delete(member._id);
         }
 

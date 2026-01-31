@@ -51,9 +51,9 @@ export const updateSyncState = mutation({
             throw new Error("Room not found");
         }
 
-        // Only admin can update sync state
-        if (room.adminId !== session.userId) {
-            console.error("Not admin");
+        // Only admin can update sync state, unless everyone control is enabled
+        if (room.adminId !== session.userId && !room.everyoneCanControl) {
+            console.error("Not admin and everyone control is disabled");
             throw new Error("Only the room admin can control playback");
         }
 
@@ -120,8 +120,8 @@ export const play = mutation({
             throw new Error("Room not found");
         }
 
-        if (room.adminId !== session.userId) {
-            console.error("Not admin");
+        if (room.adminId !== session.userId && !room.everyoneCanControl) {
+            console.error("Not admin and everyone control is disabled");
             throw new Error("Only the room admin can control playback");
         }
 
@@ -169,8 +169,8 @@ export const pause = mutation({
             throw new Error("Room not found");
         }
 
-        if (room.adminId !== session.userId) {
-            console.error("Not admin");
+        if (room.adminId !== session.userId && !room.everyoneCanControl) {
+            console.error("Not admin and everyone control is disabled");
             throw new Error("Only the room admin can control playback");
         }
 
@@ -218,8 +218,8 @@ export const seek = mutation({
             throw new Error("Room not found");
         }
 
-        if (room.adminId !== session.userId) {
-            console.error("Not admin");
+        if (room.adminId !== session.userId && !room.everyoneCanControl) {
+            console.error("Not admin and everyone control is disabled");
             throw new Error("Only the room admin can control playback");
         }
 

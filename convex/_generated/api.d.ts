@@ -10,6 +10,7 @@
 
 import type * as roomMembers from "../roomMembers.js";
 import type * as rooms from "../rooms.js";
+import type * as subtitles from "../subtitles.js";
 import type * as sync from "../sync.js";
 import type * as users from "../users.js";
 import type * as utils from "../utils.js";
@@ -23,6 +24,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   roomMembers: typeof roomMembers;
   rooms: typeof rooms;
+  subtitles: typeof subtitles;
   sync: typeof sync;
   users: typeof users;
   utils: typeof utils;

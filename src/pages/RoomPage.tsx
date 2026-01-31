@@ -8,6 +8,8 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import Plyr from "plyr";
 import 'plyr/dist/plyr.css';
 import type { RoomMember } from '../types';
+import { SubtitleModal } from '../components/SubtitleModal';
+import { getImageUrl } from '../lib/tmdb';
 
 // Type alias for Convex IDs
 type Id<T extends string> = string & { __tableName: T };
@@ -25,6 +27,11 @@ export function RoomPage() {
     const isLocalActionRef = useRef(false);
     const isProgrammaticActionRef = useRef(false);
 
+    // Subtitle state
+    const [isSubtitleModalOpen, setIsSubtitleModalOpen] = useState(false);
+    const [subtitleUrl, setSubtitleUrl] = useState<string | null>(null);
+    const [subtitleLabel, setSubtitleLabel] = useState<string>("");
+
     // Convex queries and mutations
     const room = useQuery(api.rooms.getRoom, roomId ? { roomId: roomId as Id<"rooms"> } : "skip");
     const members = useQuery(api.roomMembers.getRoomMembers, roomId ? { roomId: roomId as Id<"rooms"> } : "skip");
@@ -36,11 +43,13 @@ export function RoomPage() {
 
     const setFilePathMutation = useMutation(api.roomMembers.setFilePath);
     const leaveRoomMutation = useMutation(api.roomMembers.leaveRoom);
+    const deleteRoomMutation = useMutation(api.rooms.deleteRoom);
     const playMutation = useMutation(api.sync.play);
     const pauseMutation = useMutation(api.sync.pause);
     const seekMutation = useMutation(api.sync.seek);
 
     const isAdmin = room?.adminId === user?._id;
+    const canControl = isAdmin || room?.everyoneCanControl;
 
     // Initialize Plyr when video element is ready
     // Refs for handlers to ensure Plyr always calls the latest version without re-initializing
@@ -58,8 +67,9 @@ export function RoomPage() {
             }
 
             const player = new Plyr(videoRef.current, {
-                controls: ['play-large', 'play', 'progress', 'current-time', 'duration', 'mute', 'volume', 'settings', 'fullscreen'],
-                settings: ['speed'],
+                controls: ['play-large', 'play', 'progress', 'current-time', 'duration', 'mute', 'volume', 'captions', 'settings', 'fullscreen'],
+                settings: ['captions', 'speed'],
+                captions: { active: true, update: true, language: 'en' },
                 keyboard: { global: true },
             });
             playerRef.current = player;
@@ -111,10 +121,10 @@ export function RoomPage() {
             return;
         }
 
-        console.log("handlePlay called", { isAdmin, hasToken: !!token, hasRoomId: !!roomId, videoCurrent: !!videoRef.current });
+        console.log("handlePlay called", { canControl, hasToken: !!token, hasRoomId: !!roomId, videoCurrent: !!videoRef.current });
 
-        if (!isAdmin) {
-            console.warn("User is not admin, cannot play");
+        if (!canControl) {
+            console.warn("User cannot control playback");
             return;
         }
         if (!token || !roomId || !videoRef.current) {
@@ -135,7 +145,7 @@ export function RoomPage() {
             alert("Play failed: " + (e.message || String(e)));
             isLocalActionRef.current = false; // Reset if failed so we can accept updates
         }
-    }, [isAdmin, token, roomId, playMutation]);
+    }, [canControl, token, roomId, playMutation]);
 
     const handlePause = useCallback(async () => {
         // Skip if this is a programmatic action from sync (not user-initiated)
@@ -144,9 +154,9 @@ export function RoomPage() {
             return;
         }
 
-        console.log("handlePause called", { isAdmin });
+        console.log("handlePause called", { canControl });
 
-        if (!isAdmin || !token || !roomId || !videoRef.current) return;
+        if (!canControl || !token || !roomId || !videoRef.current) return;
         isLocalActionRef.current = true;
         try {
             await pauseMutation({
@@ -160,7 +170,7 @@ export function RoomPage() {
             alert("Pause failed: " + (e.message || String(e)));
             isLocalActionRef.current = false;
         }
-    }, [isAdmin, token, roomId, pauseMutation]);
+    }, [canControl, token, roomId, pauseMutation]);
 
     const handleSeeked = useCallback(async () => {
         // Skip if this is a programmatic action from sync (not user-initiated)
@@ -169,9 +179,9 @@ export function RoomPage() {
             return;
         }
 
-        console.log("handleSeeked called", { isAdmin });
+        console.log("handleSeeked called", { canControl });
 
-        if (!isAdmin || !token || !roomId || !videoRef.current) return;
+        if (!canControl || !token || !roomId || !videoRef.current) return;
         isLocalActionRef.current = true;
         try {
             await seekMutation({
@@ -185,13 +195,22 @@ export function RoomPage() {
             alert("Seek failed: " + (e.message || String(e)));
             isLocalActionRef.current = false;
         }
-    }, [isAdmin, token, roomId, seekMutation]);
+    }, [canControl, token, roomId, seekMutation]);
 
     useEffect(() => {
         handlePlayRef.current = handlePlay;
         handlePauseRef.current = handlePause;
         handleSeekedRef.current = handleSeeked;
     }, [handlePlay, handlePause, handleSeeked]);
+
+    // Update Plyr when subtitle changes
+    useEffect(() => {
+        if (playerRef.current && subtitleUrl) {
+            // Force Plyr to recognize the new track
+            // Some versions of Plyr need a source update or just active state toggle
+            playerRef.current.toggleCaptions(true);
+        }
+    }, [subtitleUrl]);
 
 
     // Handle sync state changes from server
@@ -377,7 +396,7 @@ export function RoomPage() {
         }
     };
 
-    // Leave room handler
+    // Leave room handler (for viewers)
     const handleLeaveRoom = async () => {
         if (token && roomId) {
             await leaveRoomMutation({ token, roomId: roomId as Id<"rooms"> });
@@ -385,10 +404,49 @@ export function RoomPage() {
         navigate('/');
     };
 
+    // End room handler (for admin)
+    const handleEndRoom = async () => {
+        if (window.confirm("Are you sure you want to end the room for everyone?")) {
+            if (token && roomId) {
+                try {
+                    await deleteRoomMutation({ token, roomId: roomId as Id<"rooms"> });
+                    navigate('/');
+                } catch (err) {
+                    console.error('Failed to end room:', err);
+                    alert('Failed to end room');
+                }
+            }
+        }
+    };
+
+    const handleSubtitleLoaded = (vttContent: string, label: string) => {
+        // Revoke old URL if it exists to avoid memory leaks
+        if (subtitleUrl) {
+            URL.revokeObjectURL(subtitleUrl);
+        }
+
+        const blob = new Blob([vttContent], { type: 'text/vtt' });
+        const url = URL.createObjectURL(blob);
+        setSubtitleUrl(url);
+        setSubtitleLabel(label);
+
+        // If player is already initialized, it might need a re-init or update
+        // Plyr picks up <track> changes usually, but we'll see
+    };
+
     if (!room) {
         return (
-            <div className="page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <div className="spinner spinner-lg" />
+            <div className="page" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '20px' }}>
+                <div className="empty-state">
+                    <div className="empty-state-icon">🎬</div>
+                    <h2 className="empty-state-title">Room Not Found</h2>
+                    <p className="empty-state-text">
+                        The room might have been ended by the admin or it doesn't exist anymore.
+                    </p>
+                    <button className="btn btn-primary" onClick={() => navigate('/')} style={{ marginTop: '24px' }}>
+                        Go to Home
+                    </button>
+                </div>
             </div>
         );
     }
@@ -398,9 +456,15 @@ export function RoomPage() {
             {/* Room Header */}
             <header className="header">
                 <div className="header-logo">
-                    <button className="btn btn-ghost" onClick={handleLeaveRoom}>
-                        ← Back
-                    </button>
+                    {isAdmin ? (
+                        <button className="btn btn-danger btn-sm" onClick={handleEndRoom}>
+                            🛑 End Room
+                        </button>
+                    ) : (
+                        <button className="btn btn-ghost btn-sm" onClick={handleLeaveRoom}>
+                            🚪 Exit Room
+                        </button>
+                    )}
                     <div>
                         <h1 style={{ fontSize: '1.25rem' }}>{room.name}</h1>
                         <span style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
@@ -416,6 +480,13 @@ export function RoomPage() {
                     {isAdmin && (
                         <span className="room-card-badge">Admin</span>
                     )}
+                    <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => setIsSubtitleModalOpen(true)}
+                        style={{ padding: '6px 12px' }}
+                    >
+                        💬 Subtitles
+                    </button>
                 </div>
             </header>
 
@@ -446,16 +517,33 @@ export function RoomPage() {
                                 src={videoSrc}
                                 style={{ width: '100%', height: '100%' }}
                                 playsInline
-                            />
+                            >
+                                {subtitleUrl && (
+                                    <track
+                                        kind="subtitles"
+                                        label={subtitleLabel || 'English'}
+                                        srcLang="en"
+                                        src={subtitleUrl}
+                                        default
+                                    />
+                                )}
+                            </video>
                         )}
                     </div>
 
                     {/* Controls Info */}
 
-                    {!isAdmin && videoSrc && (
+                    {!canControl && videoSrc && (
                         <div className="room-controls">
                             <span style={{ color: 'var(--text-secondary)' }}>
                                 🎮 Only the room admin ({room.adminName}) can control playback
+                            </span>
+                        </div>
+                    )}
+                    {room.everyoneCanControl && videoSrc && (
+                        <div className="room-controls">
+                            <span style={{ color: 'var(--primary)' }}>
+                                🎮 Shared Control: Anyone can control playback
                             </span>
                         </div>
                     )}
@@ -463,6 +551,21 @@ export function RoomPage() {
 
                 {/* Sidebar - User List */}
                 <div className="room-sidebar">
+                    {room.moviePoster && (
+                        <div className="room-poster" style={{ padding: '16px', borderBottom: '1px solid var(--border)' }}>
+                            <img
+                                src={getImageUrl(room.moviePoster)}
+                                alt={room.movieTitle}
+                                style={{
+                                    width: '100%',
+                                    borderRadius: '12px',
+                                    boxShadow: '0 8px 16px rgba(0,0,0,0.3)',
+                                    aspectRatio: '2/3',
+                                    objectFit: 'cover'
+                                }}
+                            />
+                        </div>
+                    )}
                     <div className="room-sidebar-header">
                         <h3 className="room-sidebar-title">Viewers</h3>
                         <span className="room-sidebar-count">{members?.length || 0} online</span>
@@ -488,6 +591,14 @@ export function RoomPage() {
                     </div>
                 </div>
             </div>
+
+            <SubtitleModal
+                isOpen={isSubtitleModalOpen}
+                onClose={() => setIsSubtitleModalOpen(false)}
+                onSubtitleLoaded={handleSubtitleLoaded}
+                movieTitle={room.movieTitle}
+                tmdbId={room.tmdbId}
+            />
         </div>
     );
 }

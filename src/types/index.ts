@@ -7,6 +7,7 @@ export interface Room {
     adminId: string;
     adminName?: string;
     isPublic: boolean;
+    everyoneCanControl: boolean;
     createdAt: number;
     memberCount?: number;
 }
@@ -39,4 +40,13 @@ export interface User {
     displayName: string;
     isOnline: boolean;
     currentRoomId?: string;
+}
+
+export interface TMDBMovie {
+    id: number;
+    title: string;
+    overview: string;
+    poster_path: string;
+    release_date: string;
+    vote_average: number;
 }

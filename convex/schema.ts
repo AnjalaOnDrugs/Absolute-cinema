@@ -20,12 +20,14 @@ export default defineSchema({
     name: v.string(),
     movieTitle: v.string(),
     movieFileName: v.string(), // Expected filename for validation
+    tmdbId: v.optional(v.number()),
+    moviePoster: v.optional(v.string()),
     adminId: v.id("users"),
     isPublic: v.boolean(),
+    everyoneCanControl: v.boolean(),
     createdAt: v.number(),
   })
-    .index("by_admin", ["adminId"])
-    .index("by_public", ["isPublic"]),
+    .index("by_admin", ["adminId"]),
 
   // Room members table - tracks who is in which room
   roomMembers: defineTable({

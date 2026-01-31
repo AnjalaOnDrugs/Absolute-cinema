@@ -182,6 +182,17 @@ a:hover {
   color: var(--text-primary);
 }
 
+.btn-danger {
+  background: var(--error);
+  color: var(--text-primary);
+}
+
+.btn-danger:hover {
+  background: var(--primary-dark);
+  transform: translateY(-2px);
+  box-shadow: 0 0 20px rgba(229, 9, 20, 0.4);
+}
+
 .btn-icon {
   padding: 10px;
   border-radius: var(--radius-full);
@@ -633,8 +644,14 @@ a:hover {
   grid-template-columns: repeat(3, 1fr);
 }
 
+.grid-cols-4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+
 @media (max-width: 1024px) {
-  .grid-cols-3 {
+
+  .grid-cols-3,
+  .grid-cols-4 {
     grid-template-columns: repeat(2, 1fr);
   }
 }
@@ -645,6 +662,35 @@ a:hover {
   .grid-cols-3 {
     grid-template-columns: 1fr;
   }
+}
+
+/* Custom Scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-full);
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Subtitle Tabs */
+.subtitle-tabs .btn {
+  font-size: 0.875rem;
+  transition: all var(--transition-fast);
+}
+
+.subtitle-tabs .btn-primary {
+  background: var(--primary);
+  box-shadow: none;
 }
 
 /* Animations */
