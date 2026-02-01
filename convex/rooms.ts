@@ -12,6 +12,7 @@ export const createRoom = mutation({
         moviePoster: v.optional(v.string()),
         isPublic: v.boolean(),
         everyoneCanControl: v.boolean(),
+        localFilePath: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
         // Verify session
@@ -53,7 +54,8 @@ export const createRoom = mutation({
         await ctx.db.insert("roomMembers", {
             roomId,
             userId: session.userId,
-            isReady: false,
+            isReady: !!args.localFilePath,
+            localFilePath: args.localFilePath,
             joinedAt: Date.now(),
         });
 
@@ -72,19 +74,38 @@ export const listPublicRooms = query({
             .query("rooms")
             .collect();
 
-        // Get admin info for each room
+        // Get admin info, members, and sync state for each room
         const roomsWithAdmin = await Promise.all(
             rooms.map(async (room) => {
                 const admin = await ctx.db.get(room.adminId);
-                const memberCount = await ctx.db
+                const members = await ctx.db
                     .query("roomMembers")
                     .withIndex("by_room", (q) => q.eq("roomId", room._id))
                     .collect();
 
+                // Get sync state for isPlaying
+                const syncState = await ctx.db
+                    .query("syncState")
+                    .withIndex("by_room", (q) => q.eq("roomId", room._id))
+                    .first();
+
+                // Get member profile pictures
+                const memberDetails = await Promise.all(
+                    members.slice(0, 5).map(async (member) => {
+                        const user = await ctx.db.get(member.userId);
+                        return {
+                            displayName: user?.displayName || "Unknown",
+                            profilePicture: user?.profilePicture,
+                        };
+                    })
+                );
+
                 return {
                     ...room,
                     adminName: admin?.displayName || "Unknown",
-                    memberCount: memberCount.length,
+                    memberCount: members.length,
+                    members: memberDetails,
+                    isPlaying: syncState?.isPlaying || false,
                 };
             })
         );
@@ -115,14 +136,33 @@ export const listMyRooms = query({
 
         const roomsWithMembers = await Promise.all(
             rooms.map(async (room) => {
-                const memberCount = await ctx.db
+                const members = await ctx.db
                     .query("roomMembers")
                     .withIndex("by_room", (q) => q.eq("roomId", room._id))
                     .collect();
 
+                // Get sync state for isPlaying
+                const syncState = await ctx.db
+                    .query("syncState")
+                    .withIndex("by_room", (q) => q.eq("roomId", room._id))
+                    .first();
+
+                // Get member profile pictures
+                const memberDetails = await Promise.all(
+                    members.slice(0, 5).map(async (member) => {
+                        const user = await ctx.db.get(member.userId);
+                        return {
+                            displayName: user?.displayName || "Unknown",
+                            profilePicture: user?.profilePicture,
+                        };
+                    })
+                );
+
                 return {
                     ...room,
-                    memberCount: memberCount.length,
+                    memberCount: members.length,
+                    members: memberDetails,
+                    isPlaying: syncState?.isPlaying || false,
                 };
             })
         );

@@ -23,6 +23,7 @@ export const register = mutation({
         email: v.string(),
         password: v.string(),
         displayName: v.string(),
+        profilePicture: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
         // Check if email already exists
@@ -51,6 +52,7 @@ export const register = mutation({
             email: args.email,
             displayName: args.displayName,
             passwordHash: simpleHash(args.password),
+            profilePicture: args.profilePicture,
             isOnline: true,
             createdAt: Date.now(),
         });
@@ -63,7 +65,20 @@ export const register = mutation({
             expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 days
         });
 
-        return { userId, token };
+        const user = await ctx.db.get(userId);
+        if (!user) throw new Error("Failed to create user");
+
+        return {
+            token,
+            user: {
+                _id: user._id,
+                username: user.username,
+                email: user.email,
+                displayName: user.displayName,
+                profilePicture: user.profilePicture,
+                isOnline: user.isOnline,
+            }
+        };
     },
 });
 
@@ -98,7 +113,17 @@ export const login = mutation({
             expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
         });
 
-        return { userId: user._id, token };
+        return {
+            token,
+            user: {
+                _id: user._id,
+                username: user.username,
+                email: user.email,
+                displayName: user.displayName,
+                profilePicture: user.profilePicture,
+                isOnline: user.isOnline,
+            }
+        };
     },
 });
 
@@ -145,6 +170,7 @@ export const getCurrentUser = query({
             username: user.username,
             email: user.email,
             displayName: user.displayName,
+            profilePicture: user.profilePicture,
             isOnline: user.isOnline,
             currentRoomId: user.currentRoomId,
         };
@@ -202,5 +228,22 @@ export const cleanupUser = mutation({
             isOnline: false,
             currentRoomId: undefined
         });
+    },
+});
+
+export const getUserById = query({
+    args: { userId: v.id("users") },
+    handler: async (ctx, args) => {
+        const user = await ctx.db.get(args.userId);
+        if (!user) return null;
+
+        return {
+            _id: user._id,
+            username: user.username,
+            displayName: user.displayName,
+            profilePicture: user.profilePicture,
+            isOnline: user.isOnline,
+            createdAt: user.createdAt,
+        };
     },
 });

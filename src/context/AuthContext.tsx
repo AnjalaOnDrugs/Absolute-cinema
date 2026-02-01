@@ -5,6 +5,7 @@ interface User {
     username: string;
     email: string;
     displayName: string;
+    profilePicture?: string;
     isOnline: boolean;
     currentRoomId?: string;
 }

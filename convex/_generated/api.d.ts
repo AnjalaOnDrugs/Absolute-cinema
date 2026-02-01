@@ -14,6 +14,7 @@ import type * as subtitles from "../subtitles.js";
 import type * as sync from "../sync.js";
 import type * as users from "../users.js";
 import type * as utils from "../utils.js";
+import type * as watchLogs from "../watchLogs.js";
 
 import type {
   ApiFromModules,
@@ -28,6 +29,7 @@ declare const fullApi: ApiFromModules<{
   sync: typeof sync;
   users: typeof users;
   utils: typeof utils;
+  watchLogs: typeof watchLogs;
 }>;
 
 /**

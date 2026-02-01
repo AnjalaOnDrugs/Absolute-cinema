@@ -8,6 +8,7 @@ export default defineSchema({
     email: v.string(),
     displayName: v.string(),
     passwordHash: v.string(),
+    profilePicture: v.optional(v.string()), // base64 data URL for profile picture
     isOnline: v.boolean(),
     currentRoomId: v.optional(v.id("rooms")),
     createdAt: v.number(),
@@ -49,6 +50,7 @@ export default defineSchema({
     playbackRate: v.number(),
     lastUpdatedBy: v.id("users"),
     lastUpdatedAt: v.number(),
+    lastAction: v.optional(v.union(v.literal("play"), v.literal("pause"), v.literal("seek"))),
   }).index("by_room", ["roomId"]),
 
   // Sessions table - for authentication
@@ -59,4 +61,16 @@ export default defineSchema({
   })
     .index("by_token", ["token"])
     .index("by_user", ["userId"]),
+
+  // Watch logs table - stores history of watched movies
+  watchLogs: defineTable({
+    userId: v.id("users"),
+    movieTitle: v.string(),
+    moviePoster: v.optional(v.string()),
+    rating: v.number(), // 0 to 5, including half stars
+    review: v.optional(v.string()), // user's review text
+    participants: v.array(v.string()), // list of display names
+    watchedAt: v.number(),
+    tmdbId: v.optional(v.number()),
+  }).index("by_user", ["userId"]),
 });

@@ -3,6 +3,18 @@ import { useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
+import logo from '../assets/logo.png';
+
+// Map Convex error messages to user-friendly messages
+function mapErrorMessage(error: string): string {
+    if (error.includes('Invalid email or password')) {
+        return 'Incorrect email or password. Please try again.';
+    }
+    if (error.includes('Invalid session')) {
+        return 'Your session has expired. Please log in again.';
+    }
+    return 'Login failed. Please try again.';
+}
 
 export function LoginPage() {
     const [email, setEmail] = useState('');
@@ -21,19 +33,12 @@ export function LoginPage() {
 
         try {
             const result = await loginMutation({ email, password });
-
-            // Get user info
-            login(result.token, {
-                _id: result.userId,
-                email,
-                username: email.split('@')[0],
-                displayName: email.split('@')[0],
-                isOnline: true,
-            });
+            login(result.token, result.user);
 
             navigate('/');
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Login failed');
+            const errorMessage = err instanceof Error ? err.message : 'Login failed';
+            setError(mapErrorMessage(errorMessage));
         } finally {
             setIsLoading(false);
         }
@@ -43,7 +48,10 @@ export function LoginPage() {
         <div className="auth-container">
             <div className="auth-card">
                 <div className="auth-header">
-                    <h1 className="auth-title">🎬 Absolute Cinema</h1>
+                    <h1 className="auth-title">
+                        <img src={logo} alt="Absolute Cinema" className="auth-logo-img" />
+                        Absolute Cinema
+                    </h1>
                     <p className="auth-subtitle">Sign in to watch together</p>
                 </div>
 

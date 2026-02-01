@@ -19,6 +19,7 @@ export const getSyncState = query({
         return {
             ...syncState,
             lastUpdaterName: lastUpdater?.displayName || "Unknown",
+            lastUpdaterProfilePicture: lastUpdater?.profilePicture,
         };
     },
 });
@@ -136,6 +137,7 @@ export const play = mutation({
                 currentTime: args.currentTime,
                 lastUpdatedBy: session.userId,
                 lastUpdatedAt: Date.now(),
+                lastAction: "play",
             });
             console.log("Play: patch executed");
         } else {
@@ -185,6 +187,7 @@ export const pause = mutation({
                 currentTime: args.currentTime,
                 lastUpdatedBy: session.userId,
                 lastUpdatedAt: Date.now(),
+                lastAction: "pause",
             });
             console.log("Pause: patch executed");
         } else {
@@ -233,6 +236,7 @@ export const seek = mutation({
                 currentTime: args.currentTime,
                 lastUpdatedBy: session.userId,
                 lastUpdatedAt: Date.now(),
+                lastAction: "seek",
             });
             console.log("Seek: patch executed");
         } else {

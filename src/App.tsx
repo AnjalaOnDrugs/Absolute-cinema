@@ -69,6 +69,10 @@ function App() {
           console.error("Cleanup failed", e);
         }
       }
+
+      // Clear localStorage to force login on next launch
+      localStorage.removeItem('authUser');
+      localStorage.removeItem('authToken');
     };
 
     window.addEventListener('beforeunload', handleUnload);
@@ -80,7 +84,11 @@ function App() {
       <AuthProvider>
         <BrowserRouter>
           <Routes>
-            <Route path="/" element={<HomePage />} />
+            <Route path="/" element={
+              <ProtectedRoute>
+                <HomePage />
+              </ProtectedRoute>
+            } />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
             <Route

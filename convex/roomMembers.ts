@@ -103,8 +103,10 @@ export const getRoomMembers = query({
 
                 return {
                     _id: member._id,
+                    userId: member.userId,
                     displayName: user?.displayName || "Unknown",
                     username: user?.username || "unknown",
+                    profilePicture: user?.profilePicture,
                     isOnline: user?.isOnline || false,
                     isReady: member.isReady,
                     isAdmin: room?.adminId === member.userId,

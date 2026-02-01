@@ -4,18 +4,23 @@ export interface Room {
     name: string;
     movieTitle: string;
     movieFileName: string;
+    moviePoster?: string;
     adminId: string;
     adminName?: string;
     isPublic: boolean;
     everyoneCanControl: boolean;
     createdAt: number;
     memberCount?: number;
+    members?: { displayName: string; profilePicture?: string }[];
+    isPlaying?: boolean;
 }
 
 export interface RoomMember {
     _id: string;
+    userId: string;
     displayName: string;
     username: string;
+    profilePicture?: string;
     isOnline: boolean;
     isReady: boolean;
     isAdmin: boolean;
@@ -31,6 +36,8 @@ export interface SyncState {
     lastUpdatedBy: string;
     lastUpdatedAt: number;
     lastUpdaterName?: string;
+    lastUpdaterProfilePicture?: string;
+    lastAction?: 'play' | 'pause' | 'seek';
 }
 
 export interface User {
@@ -38,6 +45,7 @@ export interface User {
     username: string;
     email: string;
     displayName: string;
+    profilePicture?: string;
     isOnline: boolean;
     currentRoomId?: string;
 }

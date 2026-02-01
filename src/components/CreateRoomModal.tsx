@@ -3,8 +3,10 @@ import { useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import logo from '../assets/logo.png';
 import { searchMovies, TMDBMovie } from '../lib/tmdb';
 import { useEffect, useRef } from 'react';
+import { open } from '@tauri-apps/plugin-dialog';
 
 interface CreateRoomModalProps {
     onClose: () => void;
@@ -14,7 +16,7 @@ interface CreateRoomModalProps {
 export function CreateRoomModal({ onClose, initialMovieTitle }: CreateRoomModalProps) {
     const [name, setName] = useState(initialMovieTitle ? `${initialMovieTitle} Room` : '');
     const [movieTitle, setMovieTitle] = useState(initialMovieTitle || '');
-    const [movieFileName, setMovieFileName] = useState(initialMovieTitle || '');
+    const [movieFileName, setMovieFileName] = useState('');
     const [everyoneCanControl, setEveryoneCanControl] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
@@ -23,6 +25,7 @@ export function CreateRoomModal({ onClose, initialMovieTitle }: CreateRoomModalP
     const [suggestions, setSuggestions] = useState<TMDBMovie[]>([]);
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [mediaType, setMediaType] = useState('.mp4');
+    const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
     const suggestionRef = useRef<HTMLDivElement>(null);
 
     const mediaTypes = ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.flv'];
@@ -62,7 +65,6 @@ export function CreateRoomModal({ onClose, initialMovieTitle }: CreateRoomModalP
         setTmdbId(movie.id);
         setMoviePoster(movie.poster_path);
         setName(`${movie.title} Room`);
-        setMovieFileName(movie.title);
         setShowSuggestions(false);
     };
 
@@ -87,6 +89,7 @@ export function CreateRoomModal({ onClose, initialMovieTitle }: CreateRoomModalP
                 moviePoster,
                 isPublic: true,
                 everyoneCanControl,
+                localFilePath: selectedFilePath || undefined,
             });
 
             navigate(`/room/${roomId}`);
@@ -183,7 +186,70 @@ export function CreateRoomModal({ onClose, initialMovieTitle }: CreateRoomModalP
                         </div>
 
                         <div className="input-group">
-                            <label htmlFor="movieFileName">Movie File Name</label>
+                            <label htmlFor="movieFileName">Movie File Selection</label>
+                            <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                                <button
+                                    type="button"
+                                    className="btn btn-secondary"
+                                    onClick={async () => {
+                                        try {
+                                            const selected = await open({
+                                                multiple: false,
+                                                filters: [{
+                                                    name: 'Video',
+                                                    extensions: ['mp4', 'mkv', 'avi', 'webm', 'mov']
+                                                }]
+                                            });
+
+                                            if (selected) {
+                                                const filePath = typeof selected === 'string'
+                                                    ? selected
+                                                    : (selected as { path?: string }).path || String(selected);
+
+                                                setSelectedFilePath(filePath);
+
+                                                // Extract filename and extension
+                                                const parts = filePath.split(/[\\/]/);
+                                                const fullFileName = parts[parts.length - 1];
+                                                const lastDotIndex = fullFileName.lastIndexOf('.');
+
+                                                if (lastDotIndex !== -1) {
+                                                    const namePart = fullFileName.substring(0, lastDotIndex);
+                                                    const extPart = fullFileName.substring(lastDotIndex);
+                                                    setMovieFileName(namePart);
+                                                    if (mediaTypes.includes(extPart)) {
+                                                        setMediaType(extPart);
+                                                    }
+                                                } else {
+                                                    setMovieFileName(fullFileName);
+                                                }
+                                            }
+                                        } catch (err) {
+                                            console.error('Failed to select file:', err);
+                                        }
+                                    }}
+                                    style={{ flexShrink: 0 }}
+                                >
+                                    {selectedFilePath ? '📁 Change File' : '📁 Select Movie File'}
+                                </button>
+                                {selectedFilePath && (
+                                    <div style={{
+                                        flex: 1,
+                                        padding: '10px 14px',
+                                        backgroundColor: 'var(--bg-tertiary)',
+                                        borderRadius: '8px',
+                                        fontSize: '0.875rem',
+                                        color: 'var(--text-primary)',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap',
+                                        border: '1px solid var(--border)'
+                                    }}>
+                                        {selectedFilePath}
+                                    </div>
+                                )}
+                            </div>
+
                             <div style={{ display: 'flex', gap: '8px' }}>
                                 <input
                                     type="text"
@@ -207,7 +273,9 @@ export function CreateRoomModal({ onClose, initialMovieTitle }: CreateRoomModalP
                                 </select>
                             </div>
                             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                                This filename will be used to verify that all viewers have the correct file
+                                {selectedFilePath
+                                    ? "File name and type extracted from selected file. You can adjust them if needed."
+                                    : "This filename will be used to verify that all viewers have the correct file."}
                             </span>
                         </div>
 
@@ -230,7 +298,12 @@ export function CreateRoomModal({ onClose, initialMovieTitle }: CreateRoomModalP
                             Cancel
                         </button>
                         <button type="submit" className="btn btn-primary" disabled={isLoading}>
-                            {isLoading ? <span className="spinner" /> : '🎬 Create Room'}
+                            {isLoading ? <span className="spinner" /> : (
+                                <>
+                                    <img src={logo} alt="" style={{ height: '1.2em', marginRight: '8px', verticalAlign: 'middle' }} />
+                                    Create Room
+                                </>
+                            )}
                         </button>
                     </div>
                 </form>

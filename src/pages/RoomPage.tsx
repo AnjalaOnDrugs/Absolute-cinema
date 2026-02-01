@@ -1,15 +1,28 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import logo from '../assets/logo.png';
+import exitRoomLogo from '../assets/exit_room_logo.png';
+import readyLogo from '../assets/ready_logo.png';
+import notReadyLogo from '../assets/not_ready_logo.png';
 import { useQuery, useMutation, useAction } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { useAuth } from '../context/AuthContext';
 import { open } from '@tauri-apps/plugin-dialog';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import Plyr from "plyr";
-import 'plyr/dist/plyr.css';
+import { VideoPlayer } from '../components/VideoPlayer';
 import type { RoomMember } from '../types';
 import { SubtitleModal } from '../components/SubtitleModal';
 import { getImageUrl } from '../lib/tmdb';
+import { PostWatchModal } from '../components/PostWatchModal';
+import { ConfirmationModal } from '../components/ConfirmationModal';
+import { UserProfileModal } from '../components/UserProfileModal';
+
+// Format seconds to MM:SS
+function formatTime(seconds: number): string {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
 
 // Type alias for Convex IDs
 type Id<T extends string> = string & { __tableName: T };
@@ -22,7 +35,7 @@ export function RoomPage() {
     const [videoSrc, setVideoSrc] = useState<string | null>(null);
     const [isSyncing, setIsSyncing] = useState(false);
     const videoRef = useRef<HTMLVideoElement>(null);
-    const playerRef = useRef<Plyr | null>(null);
+
     const lastSyncRef = useRef<number>(0);
     const isLocalActionRef = useRef(false);
     const isProgrammaticActionRef = useRef(false);
@@ -31,6 +44,27 @@ export function RoomPage() {
     const [isSubtitleModalOpen, setIsSubtitleModalOpen] = useState(false);
     const [subtitleUrl, setSubtitleUrl] = useState<string | null>(null);
     const [subtitleLabel, setSubtitleLabel] = useState<string>("");
+
+    // Action notification state
+    const [notificationMessage, setNotificationMessage] = useState<string | null>(null);
+    const [notificationVisible, setNotificationVisible] = useState(false);
+    const [notificationKey, setNotificationKey] = useState(0);
+    const [notificationProfile, setNotificationProfile] = useState<string | undefined>(undefined);
+    const [notificationDisplayName, setNotificationDisplayName] = useState<string | undefined>(undefined);
+    const [notificationIsPause, setNotificationIsPause] = useState(false);
+    const prevSyncUpdateRef = useRef<number | null>(null);
+
+    // Post-watch modal state
+    const [showPostWatchModal, setShowPostWatchModal] = useState(false);
+    const lastMovieTitleRef = useRef<string | null>(null);
+    const lastMoviePosterRef = useRef<string | null>(null);
+    const lastTmdbIdRef = useRef<number | undefined>(undefined);
+    const lastParticipantsRef = useRef<string[]>([]);
+
+    // Confirmation modals
+    const [isConfirmLeaveOpen, setIsConfirmLeaveOpen] = useState(false);
+    const [isConfirmEndOpen, setIsConfirmEndOpen] = useState(false);
+    const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
 
     // Convex queries and mutations
     const room = useQuery(api.rooms.getRoom, roomId ? { roomId: roomId as Id<"rooms"> } : "skip");
@@ -51,42 +85,7 @@ export function RoomPage() {
     const isAdmin = room?.adminId === user?._id;
     const canControl = isAdmin || room?.everyoneCanControl;
 
-    // Initialize Plyr when video element is ready
-    // Refs for handlers to ensure Plyr always calls the latest version without re-initializing
-    const handlePlayRef = useRef<() => void>(() => { });
-    const handlePauseRef = useRef<() => void>(() => { });
-    const handleSeekedRef = useRef<() => void>(() => { });
 
-
-    // Initialize Plyr when video element is ready
-    useEffect(() => {
-        if (videoRef.current && videoSrc) {
-            // Destroy existing instance if any (safety check)
-            if (playerRef.current) {
-                playerRef.current.destroy();
-            }
-
-            const player = new Plyr(videoRef.current, {
-                controls: ['play-large', 'play', 'progress', 'current-time', 'duration', 'mute', 'volume', 'captions', 'settings', 'fullscreen'],
-                settings: ['captions', 'speed'],
-                captions: { active: true, update: true, language: 'en' },
-                keyboard: { global: true },
-            });
-            playerRef.current = player;
-
-            // Bind events to Plyr instance
-            player.on('play', () => handlePlayRef.current());
-            player.on('pause', () => handlePauseRef.current());
-            player.on('seeked', () => handleSeekedRef.current());
-        }
-
-        return () => {
-            if (playerRef.current) {
-                playerRef.current.destroy();
-                playerRef.current = null;
-            }
-        };
-    }, [videoSrc]);
 
     // Server time offset state
     const [serverOffset, setServerOffset] = useState<number>(0);
@@ -112,6 +111,68 @@ export function RoomPage() {
 
         syncClock();
     }, [getServerTime]);
+
+    // Detect sync state changes and show action notifications
+    useEffect(() => {
+        if (!syncState || !user) return;
+
+        // Skip if this is the first load (no previous ref)
+        if (prevSyncUpdateRef.current === null) {
+            prevSyncUpdateRef.current = syncState.lastUpdatedAt;
+            return;
+        }
+
+        // Skip if nothing changed
+        if (prevSyncUpdateRef.current === syncState.lastUpdatedAt) {
+            return;
+        }
+
+        // Skip if the current user performed the action
+        if (syncState.lastUpdatedBy === user._id) {
+            prevSyncUpdateRef.current = syncState.lastUpdatedAt;
+            return;
+        }
+
+        // Skip if this is a play action that should hide a pause notification
+        if (syncState.lastAction === 'play' && notificationIsPause) {
+            setNotificationVisible(false);
+            setNotificationIsPause(false);
+        }
+
+        // Build notification message based on action type
+        let actionText = '';
+        const username = syncState.lastUpdaterName || 'Someone';
+
+        switch (syncState.lastAction) {
+            case 'play':
+                actionText = `${username} Resumed`;
+                break;
+            case 'pause':
+                actionText = `${username} Paused`;
+                break;
+            case 'seek':
+                actionText = `${username} Skipped to ${formatTime(syncState.currentTime)}`;
+                break;
+            default:
+                actionText = `${username} updated playback`;
+        }
+
+        // Show notification
+        setNotificationMessage(actionText);
+        setNotificationProfile(syncState.lastUpdaterProfilePicture);
+        setNotificationDisplayName(syncState.lastUpdaterName);
+        setNotificationIsPause(false);
+        setNotificationVisible(true);
+        setNotificationKey(prev => prev + 1); // Force re-render for animation
+
+        // Hide after 4 seconds
+        const timer = setTimeout(() => {
+            setNotificationVisible(false);
+        }, 4000);
+
+        prevSyncUpdateRef.current = syncState.lastUpdatedAt;
+        return () => clearTimeout(timer);
+    }, [syncState, user, notificationIsPause]);
 
     // Handle local playback events (admin only)
     const handlePlay = useCallback(async () => {
@@ -197,25 +258,35 @@ export function RoomPage() {
         }
     }, [canControl, token, roomId, seekMutation]);
 
-    useEffect(() => {
-        handlePlayRef.current = handlePlay;
-        handlePauseRef.current = handlePause;
-        handleSeekedRef.current = handleSeeked;
-    }, [handlePlay, handlePause, handleSeeked]);
+    // Attach listeners strictly to the Ref if possible, but VideoPlayer attaches its own.
+    // However, for SYNC, we need to know when User triggers play/pause.
+    // VideoPlayer component doesn't expose onPlay etc props that are "user initiated" easily vs "programmatic".
+    // ACTUALLY, VideoPlayer logic uses `video.addEventListener('play', updateState)`.
+    // The Standard DOM 'play' event fires for both code and user.
+    // Our logic handles this via `isProgrammaticActionRef`.
+    // We need to attach OUR listeners to the video element.
+    // Since `videoRef` is passed to VideoPlayer and then to <video>, `videoRef.current` IS the video element.
+    // We can use an effect here to attach the sync listeners.
 
-    // Update Plyr when subtitle changes
     useEffect(() => {
-        if (playerRef.current && subtitleUrl) {
-            // Force Plyr to recognize the new track
-            // Some versions of Plyr need a source update or just active state toggle
-            playerRef.current.toggleCaptions(true);
-        }
-    }, [subtitleUrl]);
+        const video = videoRef.current;
+        if (!video) return;
+
+        video.addEventListener('play', handlePlay);
+        video.addEventListener('pause', handlePause);
+        video.addEventListener('seeked', handleSeeked);
+
+        return () => {
+            video.removeEventListener('play', handlePlay);
+            video.removeEventListener('pause', handlePause);
+            video.removeEventListener('seeked', handleSeeked);
+        };
+    }, [videoSrc, handlePlay, handlePause, handleSeeked]); // Re-attach if src changes (new video element potentially?)
 
 
     // Handle sync state changes from server
     useEffect(() => {
-        if (!syncState || !playerRef.current || !videoRef.current) {
+        if (!syncState || !videoRef.current) {
             return;
         }
 
@@ -327,8 +398,6 @@ export function RoomPage() {
         return () => clearInterval(interval);
     }, [syncState, serverOffset]);
 
-    // Event listeners are now handled within the Plyr initialization effect
-
 
     // Load existing file path from database on mount or when membership updates
     useEffect(() => {
@@ -355,23 +424,10 @@ export function RoomPage() {
             });
 
             if (selected) {
-                // Debug: log what Tauri returned
-                console.log('Tauri file dialog returned:', {
-                    selected,
-                    type: typeof selected,
-                    isString: typeof selected === 'string',
-                    isObject: typeof selected === 'object',
-                    stringified: JSON.stringify(selected)
-                });
-
-                // Handle both string and object (newer Tauri versions return path object)
                 const filePath = typeof selected === 'string'
                     ? selected
                     : (selected as { path?: string }).path || String(selected);
 
-                console.log('Extracted filePath:', filePath);
-
-                // Set the file path in the database
                 if (token && roomId) {
                     const result = await setFilePathMutation({
                         token,
@@ -385,10 +441,7 @@ export function RoomPage() {
                     }
                 }
 
-                // Convert to file URL for video playback
-                // Use Tauri's convertFileSrc to properly create an asset URL
                 const fileUrl = convertFileSrc(filePath);
-                console.log('Converted file URL:', fileUrl);
                 setVideoSrc(fileUrl);
             }
         } catch (err) {
@@ -398,29 +451,37 @@ export function RoomPage() {
 
     // Leave room handler (for viewers)
     const handleLeaveRoom = async () => {
+        setIsConfirmLeaveOpen(true);
+    };
+
+    const executeLeaveRoom = async () => {
         if (token && roomId) {
             await leaveRoomMutation({ token, roomId: roomId as Id<"rooms"> });
         }
-        navigate('/');
+        setIsConfirmLeaveOpen(false);
+        // Navigation will be handled by PostWatchModal via effect
     };
 
     // End room handler (for admin)
     const handleEndRoom = async () => {
-        if (window.confirm("Are you sure you want to end the room for everyone?")) {
-            if (token && roomId) {
-                try {
-                    await deleteRoomMutation({ token, roomId: roomId as Id<"rooms"> });
-                    navigate('/');
-                } catch (err) {
-                    console.error('Failed to end room:', err);
-                    alert('Failed to end room');
-                }
+        setIsConfirmEndOpen(true);
+    };
+
+    const executeEndRoom = async () => {
+        if (token && roomId) {
+            try {
+                await deleteRoomMutation({ token, roomId: roomId as Id<"rooms"> });
+                setIsConfirmEndOpen(false);
+                // Navigation will be handled by PostWatchModal via effect
+            } catch (err) {
+                console.error('Failed to end room:', err);
+                alert('Failed to end room');
+                setIsConfirmEndOpen(false);
             }
         }
     };
 
     const handleSubtitleLoaded = (vttContent: string, label: string) => {
-        // Revoke old URL if it exists to avoid memory leaks
         if (subtitleUrl) {
             URL.revokeObjectURL(subtitleUrl);
         }
@@ -429,16 +490,42 @@ export function RoomPage() {
         const url = URL.createObjectURL(blob);
         setSubtitleUrl(url);
         setSubtitleLabel(label);
-
-        // If player is already initialized, it might need a re-init or update
-        // Plyr picks up <track> changes usually, but we'll see
     };
+
+    // Capture room details for post-watch modal
+    useEffect(() => {
+        if (room?.movieTitle) {
+            lastMovieTitleRef.current = room.movieTitle;
+        }
+        if (room?.moviePoster) {
+            lastMoviePosterRef.current = room.moviePoster;
+        }
+        if (room?.tmdbId) {
+            lastTmdbIdRef.current = room.tmdbId;
+        }
+    }, [room?.movieTitle, room?.moviePoster, room?.tmdbId]);
+
+    // Track participants
+    useEffect(() => {
+        if (members && members.length > 0) {
+            lastParticipantsRef.current = members.map(m => m.displayName);
+        }
+    }, [members]);
+
+    // Show modal if room is suddenly gone (and we haven't already marked it)
+    useEffect(() => {
+        if (room === null && lastMovieTitleRef.current && !showPostWatchModal) {
+            setShowPostWatchModal(true);
+        }
+    }, [room, showPostWatchModal]);
 
     if (!room) {
         return (
             <div className="page" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '20px' }}>
                 <div className="empty-state">
-                    <div className="empty-state-icon">🎬</div>
+                    <div className="empty-state-icon">
+                        <img src={logo} alt="Absolute Cinema" style={{ height: '64px', marginBottom: '16px' }} />
+                    </div>
                     <h2 className="empty-state-title">Room Not Found</h2>
                     <p className="empty-state-text">
                         The room might have been ended by the admin or it doesn't exist anymore.
@@ -447,6 +534,15 @@ export function RoomPage() {
                         Go to Home
                     </button>
                 </div>
+                {showPostWatchModal && lastMovieTitleRef.current && (
+                    <PostWatchModal
+                        movieTitle={lastMovieTitleRef.current}
+                        moviePoster={lastMoviePosterRef.current || undefined}
+                        tmdbId={lastTmdbIdRef.current}
+                        participants={lastParticipantsRef.current}
+                        onClose={() => navigate('/')}
+                    />
+                )}
             </div>
         );
     }
@@ -458,11 +554,31 @@ export function RoomPage() {
                 <div className="header-logo">
                     {isAdmin ? (
                         <button className="btn btn-danger btn-sm" onClick={handleEndRoom}>
-                            🛑 End Room
+                            <img
+                                src={exitRoomLogo}
+                                alt=""
+                                style={{
+                                    height: '1.2em',
+                                    marginRight: '8px',
+                                    verticalAlign: 'middle',
+                                    filter: 'brightness(0) invert(1)'
+                                }}
+                            />
+                            End Room
                         </button>
                     ) : (
                         <button className="btn btn-ghost btn-sm" onClick={handleLeaveRoom}>
-                            🚪 Exit Room
+                            <img
+                                src={exitRoomLogo}
+                                alt=""
+                                style={{
+                                    height: '1.2em',
+                                    marginRight: '8px',
+                                    verticalAlign: 'middle',
+                                    filter: 'brightness(0) invert(0.7)'
+                                }}
+                            />
+                            Exit Room
                         </button>
                     )}
                     <div>
@@ -477,16 +593,11 @@ export function RoomPage() {
                         <span className={`sync-status-dot ${isSyncing ? 'syncing' : ''}`} />
                         <span>{isSyncing ? 'Syncing...' : 'In Sync'}</span>
                     </div>
+
                     {isAdmin && (
                         <span className="room-card-badge">Admin</span>
                     )}
-                    <button
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => setIsSubtitleModalOpen(true)}
-                        style={{ padding: '6px 12px' }}
-                    >
-                        💬 Subtitles
-                    </button>
+
                 </div>
             </header>
 
@@ -512,22 +623,21 @@ export function RoomPage() {
                                 </div>
                             </div>
                         ) : (
-                            <video
+                            <VideoPlayer
                                 ref={videoRef}
                                 src={videoSrc}
-                                style={{ width: '100%', height: '100%' }}
-                                playsInline
-                            >
-                                {subtitleUrl && (
-                                    <track
-                                        kind="subtitles"
-                                        label={subtitleLabel || 'English'}
-                                        srcLang="en"
-                                        src={subtitleUrl}
-                                        default
-                                    />
-                                )}
-                            </video>
+                                poster={room.moviePoster}
+                                subtitleUrl={subtitleUrl}
+                                subtitleLabel={subtitleLabel}
+                                onSubtitleClick={() => setIsSubtitleModalOpen(true)}
+                                movieTitle={room.movieTitle}
+                                actionNotification={notificationVisible ? notificationMessage : null}
+                                actionNotificationProfile={notificationProfile}
+                                actionNotificationDisplayName={notificationDisplayName}
+                                actionNotificationUserId={syncState?.lastUpdatedBy}
+                                actionNotificationIsPause={notificationIsPause}
+                                onUserClick={(uid) => setSelectedUserId(uid)}
+                            />
                         )}
                     </div>
 
@@ -573,14 +683,37 @@ export function RoomPage() {
 
                     <div className="user-list">
                         {(members as RoomMember[] | undefined)?.map((member: RoomMember) => (
-                            <div key={member._id} className="user-item">
-                                <div className="avatar avatar-sm">
-                                    {member.displayName.charAt(0).toUpperCase()}
+                            <div
+                                key={member._id}
+                                className="user-item"
+                                style={{ cursor: 'pointer' }}
+                                onClick={() => setSelectedUserId(member.userId)}
+                            >
+                                <div className="avatar avatar-sm" style={{ overflow: 'hidden' }}>
+                                    {member.profilePicture ? (
+                                        <img
+                                            src={member.profilePicture}
+                                            alt={member.displayName}
+                                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                        />
+                                    ) : (
+                                        member.displayName.charAt(0).toUpperCase()
+                                    )}
                                 </div>
                                 <div className="user-item-info">
                                     <div className="user-item-name">{member.displayName}</div>
-                                    <div className="user-item-status">
-                                        {member.isReady ? '✅ Ready' : '⏳ Selecting file...'}
+                                    <div className="user-item-status" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                        {member.isReady ? (
+                                            <>
+                                                <img src={readyLogo} alt="" style={{ height: '1.1em', width: 'auto' }} />
+                                                <span style={{ color: 'var(--success)' }}>Ready</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <img src={notReadyLogo} alt="" style={{ height: '1.1em', width: 'auto' }} />
+                                                <span style={{ color: 'var(--warning)' }}>Selecting file...</span>
+                                            </>
+                                        )}
                                     </div>
                                 </div>
                                 {member.isAdmin && (
@@ -599,6 +732,45 @@ export function RoomPage() {
                 movieTitle={room.movieTitle}
                 tmdbId={room.tmdbId}
             />
+
+            {showPostWatchModal && lastMovieTitleRef.current && (
+                <PostWatchModal
+                    movieTitle={lastMovieTitleRef.current}
+                    moviePoster={lastMoviePosterRef.current || undefined}
+                    tmdbId={lastTmdbIdRef.current}
+                    participants={lastParticipantsRef.current}
+                    onClose={() => navigate('/')}
+                />
+            )}
+
+            <ConfirmationModal
+                isOpen={isConfirmLeaveOpen}
+                title="Exit Room"
+                message="Are you sure you want to leave the watch party?"
+                icon={exitRoomLogo}
+                confirmText="Leave Room"
+                onConfirm={executeLeaveRoom}
+                onCancel={() => setIsConfirmLeaveOpen(false)}
+                isDanger={true}
+            />
+
+            <ConfirmationModal
+                isOpen={isConfirmEndOpen}
+                title="End Room"
+                message="This will end the watch party for everyone. Are you sure?"
+                icon={exitRoomLogo}
+                confirmText="End for All"
+                onConfirm={executeEndRoom}
+                onCancel={() => setIsConfirmEndOpen(false)}
+                isDanger={true}
+            />
+
+            {selectedUserId && (
+                <UserProfileModal
+                    userId={selectedUserId}
+                    onClose={() => setSelectedUserId(null)}
+                />
+            )}
         </div>
     );
 }
