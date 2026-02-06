@@ -22,6 +22,9 @@ interface VideoPlayerProps {
     actionNotificationUserId?: string;
     actionNotificationIsPause?: boolean;
     onUserClick?: (userId: string) => void;
+    // Codec error callback
+    onCodecError?: () => void;
+    onFixIssues?: () => void;
 }
 
 export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(({
@@ -40,7 +43,9 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(({
     actionNotificationDisplayName,
     actionNotificationUserId,
     actionNotificationIsPause,
-    onUserClick
+    onUserClick,
+    onCodecError,
+    onFixIssues
 }, ref) => {
     // Internal state for UI
     const containerRef = useRef<HTMLDivElement>(null);
@@ -224,12 +229,42 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(({
         video.addEventListener('loadedmetadata', updateState);
         video.addEventListener('volumechange', updateState);
 
+        // Detect codec errors - video has 0 dimensions but has audio tracks
+        const handleLoadedData = () => {
+            // Check if video has no video tracks (audio only due to codec issue)
+            if (video.videoWidth === 0 && video.videoHeight === 0) {
+                console.warn('Video has no video dimensions - possible codec issue');
+                if (onCodecError) {
+                    onCodecError();
+                }
+            }
+        };
+
+        const handleError = () => {
+            const error = video.error;
+            if (error) {
+                console.error('Video error:', error.code, error.message);
+                // MEDIA_ERR_SRC_NOT_SUPPORTED or decode errors
+                if (error.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED ||
+                    error.code === MediaError.MEDIA_ERR_DECODE) {
+                    if (onCodecError) {
+                        onCodecError();
+                    }
+                }
+            }
+        };
+
+        video.addEventListener('loadeddata', handleLoadedData);
+        video.addEventListener('error', handleError);
+
         return () => {
             video.removeEventListener('timeupdate', updateState);
             video.removeEventListener('play', updateState);
             video.removeEventListener('pause', updateState);
             video.removeEventListener('loadedmetadata', updateState);
             video.removeEventListener('volumechange', updateState);
+            video.removeEventListener('loadeddata', handleLoadedData);
+            video.removeEventListener('error', handleError);
         };
     }, [internalVideoRef, cues]);
 
@@ -450,6 +485,25 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(({
                         </div>
 
                         <div className="player-controls-right">
+                            {onFixIssues && (
+                                <button
+                                    className="player-btn vlc-btn"
+                                    onClick={onFixIssues}
+                                    title="Open in VLC (Supports all codecs)"
+                                    style={{
+                                        color: '#ff8800',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '6px',
+                                        padding: '0 8px',
+                                        width: 'auto',
+                                        fontSize: '0.8rem'
+                                    }}
+                                >
+                                    <svg viewBox="0 0 24 24" style={{ height: '1.2em' }}><path fill="currentColor" d="M17.485 17.512l1.631 3.488H4.884l1.631-3.488H17.485zM11.973 1.012c.119 0 .237.015.351.045l1.696 4.607h-4.093l1.696-4.607c.113-.03.231-.045.35-.045zm3.179 10.0h3.18l1.631 3.5h-11.232l1.631-3.5h3.179l-1.611-4.38h4.834l-1.612 4.38zm-6.358 0h3.179l1.612-4.38H5.614l1.612 4.38h3.179z" /></svg>
+                                    <span style={{ fontWeight: 600 }}>VLC</span>
+                                </button>
+                            )}
                             {/* CC Toggle */}
                             <button
                                 className={`player-btn ${isSubtitleVisible ? 'active' : ''}`}

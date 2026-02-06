@@ -129,7 +129,20 @@ export function HomePage() {
                                 <h2 style={{ marginBottom: '24px', fontSize: '1.5rem', fontWeight: 700 }}>Your Active Rooms</h2>
                                 <div className="grid grid-cols-3" style={{ gap: '24px' }}>
                                     {myRooms.map((room) => (
-                                        <div key={room._id} className="room-card" onClick={() => handleEnterRoom(room._id)}>
+                                        <div key={room._id} className={`room-card ${room.isPlaying ? 'room-card-playing' : ''}`} onClick={() => handleEnterRoom(room._id)}>
+                                            {room.moviePoster && (
+                                                <div
+                                                    className="room-card-poster"
+                                                    style={{ backgroundImage: `url(${getImageUrl(room.moviePoster)})` }}
+                                                />
+                                            )}
+                                            {room.isPlaying && (
+                                                <div className="room-card-playing-indicator">
+                                                    <div className="playing-bar"></div>
+                                                    <div className="playing-bar"></div>
+                                                    <div className="playing-bar"></div>
+                                                </div>
+                                            )}
                                             <div className="room-card-content">
                                                 <div className="room-card-header">
                                                     <h3 className="room-card-title">{room.name}</h3>
@@ -159,7 +172,20 @@ export function HomePage() {
                             {publicRooms && publicRooms.length > 0 ? (
                                 <div className="grid grid-cols-3" style={{ gap: '24px' }}>
                                     {publicRooms.map((room) => (
-                                        <div key={room._id} className="room-card" onClick={() => handleJoinRoom(room._id)}>
+                                        <div key={room._id} className={`room-card ${room.isPlaying ? 'room-card-playing' : ''}`} onClick={() => handleJoinRoom(room._id)}>
+                                            {room.moviePoster && (
+                                                <div
+                                                    className="room-card-poster"
+                                                    style={{ backgroundImage: `url(${getImageUrl(room.moviePoster)})` }}
+                                                />
+                                            )}
+                                            {room.isPlaying && (
+                                                <div className="room-card-playing-indicator">
+                                                    <div className="playing-bar"></div>
+                                                    <div className="playing-bar"></div>
+                                                    <div className="playing-bar"></div>
+                                                </div>
+                                            )}
                                             <div className="room-card-content">
                                                 <div className="room-card-info">
                                                     <div className="room-card-header">

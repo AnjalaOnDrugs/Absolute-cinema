@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { ConvexProvider, ConvexReactClient } from 'convex/react';
+import { listen } from '@tauri-apps/api/event';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { HomePage } from './pages/HomePage';
 import { LoginPage } from './pages/LoginPage';
@@ -37,40 +38,66 @@ type Id<T extends string> = string & { __tableName: T };
 function App() {
   const convexClient = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL || 'https://your-deployment.convex.cloud');
 
-  // Add cleanup listener
+  // FFmpeg setup state
+  const [showFFmpegSetup, setShowFFmpegSetup] = useState(true);
+  const [ffmpegReady, setFfmpegReady] = useState(false);
+
+  // Cleanup on window close
   useEffect(() => {
-    const handleUnload = () => {
-      // Attempt to cleanup using beacon if possible, or synchronous fetch if allowed.
-      // Since Convex client is WebSocket, standard synchronous events might not work perfect.
-      // We can try to grab the user from localStorage and call the mutation via a temporary client or fetch.
+    const cleanupAndClearStorage = async () => {
       const savedUserStr = localStorage.getItem('authUser');
       if (savedUserStr) {
         try {
           const user = JSON.parse(savedUserStr);
-          // We construct a simple fetch to the http endpoint if possible, or try to use the client.
-          // However, directly using the client inside unload is unstable.
-          // For Tauri app, this runs when closing?
-          // Let's rely on standard mutation call and hope wait works, or use navigator.sendBeacon if we had an HTTP endpoint.
-
-          // Note: Convex functions are exposed over HTTP at /api/mutation
-          // We can use navigator.sendBeacon
           const convexUrl = import.meta.env.VITE_CONVEX_URL;
           if (convexUrl && user._id) {
-            const url = `${convexUrl}/api/mutation`;
+            await fetch(`${convexUrl}/api/mutation`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                path: "users:cleanupUser",
+                args: { userId: user._id },
+                format: "json"
+              }),
+            });
+          }
+        } catch (e) {
+          console.error("Cleanup failed", e);
+        }
+      }
+      localStorage.removeItem('authUser');
+      localStorage.removeItem('authToken');
+    };
+
+    // Tauri: use reliable close event from Rust
+    const isTauri = !!(window as any).__TAURI_INTERNALS__;
+    if (isTauri) {
+      const unlisten = listen('window-close-requested', () => {
+        cleanupAndClearStorage();
+      });
+      return () => { unlisten.then((fn) => fn()); };
+    }
+
+    // Browser fallback: sendBeacon (best-effort)
+    const handleUnload = () => {
+      const savedUserStr = localStorage.getItem('authUser');
+      if (savedUserStr) {
+        try {
+          const user = JSON.parse(savedUserStr);
+          const convexUrl = import.meta.env.VITE_CONVEX_URL;
+          if (convexUrl && user._id) {
             const body = JSON.stringify({
               path: "users:cleanupUser",
               args: { userId: user._id },
               format: "json"
             });
             const blob = new Blob([body], { type: 'application/json' });
-            navigator.sendBeacon(url, blob);
+            navigator.sendBeacon(`${convexUrl}/api/mutation`, blob);
           }
         } catch (e) {
           console.error("Cleanup failed", e);
         }
       }
-
-      // Clear localStorage to force login on next launch
       localStorage.removeItem('authUser');
       localStorage.removeItem('authToken');
     };
@@ -78,6 +105,14 @@ function App() {
     window.addEventListener('beforeunload', handleUnload);
     return () => window.removeEventListener('beforeunload', handleUnload);
   }, []);
+
+  const handleFFmpegSetupComplete = (ffmpegAvailable: boolean) => {
+    setFfmpegReady(true);
+    setShowFFmpegSetup(false);
+
+    // Store the FFmpeg availability status for later use
+    localStorage.setItem('ffmpeg_available', ffmpegAvailable ? 'true' : 'false');
+  };
 
   return (
     <ConvexProvider client={convexClient}>
@@ -107,3 +142,4 @@ function App() {
 }
 
 export default App;
+

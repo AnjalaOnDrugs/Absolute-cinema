@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la \"C:\\\\Users\\\\haris\\\\OneDrive\\\\Documents\\\\Projects\\\\Absolute Cinema\\\\src-tauri\\\\icons\"\" 2>nul || echo \"Icons directory not found \")",
+      "Bash(npm run typecheck:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}
