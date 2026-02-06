@@ -203,13 +203,50 @@ export const cleanupUser = mutation({
         userId: v.id("users"),
     },
     handler: async (ctx, args) => {
-        // 1. Remove user from all rooms (roomMembers)
+        // Verify user exists
+        const userDoc = await ctx.db.get(args.userId);
+        if (!userDoc) return;
+
+        // 1. Handle room memberships with admin transfer logic
         const memberships = await ctx.db
             .query("roomMembers")
             .withIndex("by_user", (q) => q.eq("userId", args.userId))
             .collect();
 
         for (const member of memberships) {
+            const room = await ctx.db.get(member.roomId);
+
+            if (room && room.adminId === args.userId) {
+                // User is admin — transfer or delete
+                const allMembers = await ctx.db
+                    .query("roomMembers")
+                    .withIndex("by_room", (q) => q.eq("roomId", member.roomId))
+                    .collect();
+
+                const remainingMembers = allMembers.filter(
+                    (m) => m.userId !== args.userId
+                );
+
+                if (remainingMembers.length > 0) {
+                    // Transfer admin to the earliest joiner
+                    const newAdmin = remainingMembers.sort(
+                        (a, b) => a.joinedAt - b.joinedAt
+                    )[0];
+                    await ctx.db.patch(room._id, { adminId: newAdmin.userId });
+                } else {
+                    // No one left — delete sync state and room
+                    const syncState = await ctx.db
+                        .query("syncState")
+                        .withIndex("by_room", (q) => q.eq("roomId", member.roomId))
+                        .first();
+                    if (syncState) {
+                        await ctx.db.delete(syncState._id);
+                    }
+                    await ctx.db.delete(room._id);
+                }
+            }
+
+            // Delete the membership record
             await ctx.db.delete(member._id);
         }
 

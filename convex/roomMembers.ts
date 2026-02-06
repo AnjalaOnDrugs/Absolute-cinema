@@ -67,7 +67,7 @@ export const leaveRoom = mutation({
             throw new Error("Invalid session");
         }
 
-        // Find and delete membership
+        // Find membership
         const member = await ctx.db
             .query("roomMembers")
             .withIndex("by_room_and_user", (q) =>
@@ -75,6 +75,39 @@ export const leaveRoom = mutation({
             )
             .first();
 
+        // Handle admin transfer or room deletion BEFORE deleting membership
+        const room = await ctx.db.get(args.roomId);
+        if (room && room.adminId === session.userId) {
+            const allMembers = await ctx.db
+                .query("roomMembers")
+                .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
+                .collect();
+
+            // Filter out the leaving user
+            const remainingMembers = allMembers.filter(
+                (m) => m.userId !== session.userId
+            );
+
+            if (remainingMembers.length > 0) {
+                // Transfer admin to the earliest joiner
+                const newAdmin = remainingMembers.sort(
+                    (a, b) => a.joinedAt - b.joinedAt
+                )[0];
+                await ctx.db.patch(room._id, { adminId: newAdmin.userId });
+            } else {
+                // No one left — delete sync state and room
+                const syncState = await ctx.db
+                    .query("syncState")
+                    .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
+                    .first();
+                if (syncState) {
+                    await ctx.db.delete(syncState._id);
+                }
+                await ctx.db.delete(room._id);
+            }
+        }
+
+        // Now delete the membership record
         if (member) {
             await ctx.db.delete(member._id);
         }

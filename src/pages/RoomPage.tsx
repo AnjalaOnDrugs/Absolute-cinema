@@ -7,8 +7,6 @@ import notReadyLogo from '../assets/not_ready_logo.png';
 import { useQuery, useMutation, useAction } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { useAuth } from '../context/AuthContext';
-import { open } from '@tauri-apps/plugin-dialog';
-import { convertFileSrc } from '@tauri-apps/api/core';
 import { VideoPlayer } from '../components/VideoPlayer';
 import type { RoomMember } from '../types';
 import { SubtitleModal } from '../components/SubtitleModal';
@@ -16,6 +14,9 @@ import { getImageUrl } from '../lib/tmdb';
 import { PostWatchModal } from '../components/PostWatchModal';
 import { ConfirmationModal } from '../components/ConfirmationModal';
 import { UserProfileModal } from '../components/UserProfileModal';
+
+// Detect if running inside Tauri
+const isTauri = !!(window as any).__TAURI_INTERNALS__;
 
 // Format seconds to MM:SS
 function formatTime(seconds: number): string {
@@ -39,6 +40,8 @@ export function RoomPage() {
     const lastSyncRef = useRef<number>(0);
     const isLocalActionRef = useRef(false);
     const isProgrammaticActionRef = useRef(false);
+    const currentFilePathRef = useRef<string | null>(null);
+
 
     // Subtitle state
     const [isSubtitleModalOpen, setIsSubtitleModalOpen] = useState(false);
@@ -65,6 +68,8 @@ export function RoomPage() {
     const [isConfirmLeaveOpen, setIsConfirmLeaveOpen] = useState(false);
     const [isConfirmEndOpen, setIsConfirmEndOpen] = useState(false);
     const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+
+    const [showUnsupportedModal, setShowUnsupportedModal] = useState(false);
 
     // Convex queries and mutations
     const room = useQuery(api.rooms.getRoom, roomId ? { roomId: roomId as Id<"rooms"> } : "skip");
@@ -403,51 +408,126 @@ export function RoomPage() {
     useEffect(() => {
         if (_myMembership?.localFilePath && _myMembership.isReady && !videoSrc) {
             console.log('Loading saved file path:', _myMembership.localFilePath);
-            try {
-                const fileUrl = convertFileSrc(_myMembership.localFilePath);
-                setVideoSrc(fileUrl);
-            } catch (err) {
-                console.error('Failed to convert saved file path to URL:', err);
+            currentFilePathRef.current = _myMembership.localFilePath;
+
+            if (isTauri) {
+                import('@tauri-apps/api/core').then(({ convertFileSrc }) => {
+                    try {
+                        const fileUrl = convertFileSrc(_myMembership.localFilePath!);
+                        setVideoSrc(fileUrl);
+                    } catch (err) {
+                        console.error('Failed to convert saved file path to URL:', err);
+                    }
+                });
             }
+            // In browser mode, we can't restore from a file path (no File object persisted),
+            // so the user will need to re-select the file.
         }
     }, [_myMembership, videoSrc]);
 
+    // Hidden file input ref for browser fallback
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
     // File selection handler
     const handleSelectFile = async () => {
-        try {
-            const selected = await open({
-                multiple: false,
-                filters: [{
-                    name: 'Video',
-                    extensions: ['mp4', 'mkv', 'avi', 'webm', 'mov']
-                }]
-            });
+        if (isTauri) {
+            try {
+                const { open } = await import('@tauri-apps/plugin-dialog');
+                const { convertFileSrc } = await import('@tauri-apps/api/core');
 
-            if (selected) {
-                const filePath = typeof selected === 'string'
-                    ? selected
-                    : (selected as { path?: string }).path || String(selected);
+                const selected = await open({
+                    multiple: false,
+                    filters: [{
+                        name: 'Video',
+                        extensions: ['mp4', 'mkv', 'avi', 'webm', 'mov']
+                    }]
+                });
 
-                if (token && roomId) {
-                    const result = await setFilePathMutation({
-                        token,
-                        roomId: roomId as Id<"rooms">,
-                        localFilePath: filePath
-                    });
+                if (selected) {
+                    const filePath = typeof selected === 'string'
+                        ? selected
+                        : (selected as { path?: string }).path || String(selected);
 
-                    if (!result.isValid) {
-                        alert(`File name doesn't match!\nExpected: "${result.expectedFileName}"\nSelected: "${result.actualFileName || 'unknown'}"\nFull path: "${filePath}"`);
-                        return;
+                    if (token && roomId) {
+                        const result = await setFilePathMutation({
+                            token,
+                            roomId: roomId as Id<"rooms">,
+                            localFilePath: filePath
+                        });
+
+                        if (!result.isValid) {
+                            alert(`File name doesn't match!\nExpected: "${result.expectedFileName}"\nSelected: "${result.actualFileName || 'unknown'}"\nFull path: "${filePath}"`);
+                            return;
+                        }
                     }
-                }
 
-                const fileUrl = convertFileSrc(filePath);
-                setVideoSrc(fileUrl);
+                    currentFilePathRef.current = filePath;
+                    const fileUrl = convertFileSrc(filePath);
+                    setVideoSrc(fileUrl);
+                }
+            } catch (err) {
+                console.error('Failed to select file:', err);
             }
-        } catch (err) {
-            console.error('Failed to select file:', err);
+        } else {
+            // Browser fallback: trigger hidden file input
+            fileInputRef.current?.click();
         }
     };
+
+    // Browser file input change handler
+    const handleBrowserFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        try {
+            if (token && roomId) {
+                const result = await setFilePathMutation({
+                    token,
+                    roomId: roomId as Id<"rooms">,
+                    localFilePath: file.name
+                });
+
+                if (!result.isValid) {
+                    alert(`File name doesn't match!\nExpected: "${result.expectedFileName}"\nSelected: "${file.name}"`);
+                    return;
+                }
+            }
+
+            currentFilePathRef.current = file.name;
+            const fileUrl = URL.createObjectURL(file);
+            setVideoSrc(fileUrl);
+        } catch (err) {
+            console.error('Failed to load file:', err);
+        }
+    };
+
+    // Handle runtime codec error (audio only detected)
+    const handleCodecError = useCallback(async () => {
+        console.log('Codec error detected at runtime');
+        setShowUnsupportedModal(true);
+    }, []);
+
+    const handleOpenInVlc = async () => {
+        if (!isTauri) return;
+        const filePath = currentFilePathRef.current;
+        if (!filePath) return;
+
+        try {
+            const { invoke } = await import('@tauri-apps/api/core');
+            console.log('Opening in VLC:', filePath);
+            await invoke('open_vlc', { filePath });
+            setShowUnsupportedModal(false);
+
+            if (videoRef.current && !videoRef.current.paused) {
+                videoRef.current.pause();
+            }
+        } catch (err) {
+            console.error('Failed to open VLC:', err);
+            alert('Failed to launch VLC. Make sure it is installed.');
+        }
+    };
+
+
 
     // Leave room handler (for viewers)
     const handleLeaveRoom = async () => {
@@ -459,7 +539,7 @@ export function RoomPage() {
             await leaveRoomMutation({ token, roomId: roomId as Id<"rooms"> });
         }
         setIsConfirmLeaveOpen(false);
-        // Navigation will be handled by PostWatchModal via effect
+        setShowPostWatchModal(true);
     };
 
     // End room handler (for admin)
@@ -472,7 +552,7 @@ export function RoomPage() {
             try {
                 await deleteRoomMutation({ token, roomId: roomId as Id<"rooms"> });
                 setIsConfirmEndOpen(false);
-                // Navigation will be handled by PostWatchModal via effect
+                setShowPostWatchModal(true);
             } catch (err) {
                 console.error('Failed to end room:', err);
                 alert('Failed to end room');
@@ -549,6 +629,16 @@ export function RoomPage() {
 
     return (
         <div className="page">
+            {/* Hidden file input for browser fallback */}
+            {!isTauri && (
+                <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="video/*"
+                    style={{ display: 'none' }}
+                    onChange={handleBrowserFileChange}
+                />
+            )}
             {/* Room Header */}
             <header className="header">
                 <div className="header-logo">
@@ -637,6 +727,8 @@ export function RoomPage() {
                                 actionNotificationUserId={syncState?.lastUpdatedBy}
                                 actionNotificationIsPause={notificationIsPause}
                                 onUserClick={(uid) => setSelectedUserId(uid)}
+                                onCodecError={handleCodecError}
+                                onFixIssues={isTauri ? handleOpenInVlc : undefined}
                             />
                         )}
                     </div>
@@ -742,6 +834,16 @@ export function RoomPage() {
                     onClose={() => navigate('/')}
                 />
             )}
+
+            <ConfirmationModal
+                isOpen={showUnsupportedModal}
+                title="Unsupported Video"
+                message="This video format is not supported by your browser. Open it in VLC Player for the best experience?"
+                confirmText="Open in VLC"
+                cancelText="Close"
+                onConfirm={handleOpenInVlc}
+                onCancel={() => setShowUnsupportedModal(false)}
+            />
 
             <ConfirmationModal
                 isOpen={isConfirmLeaveOpen}
