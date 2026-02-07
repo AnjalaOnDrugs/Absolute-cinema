@@ -3,7 +3,31 @@
     "allow": [
       "Bash(ls -la \"C:\\\\Users\\\\haris\\\\OneDrive\\\\Documents\\\\Projects\\\\Absolute Cinema\\\\src-tauri\\\\icons\"\" 2>nul || echo \"Icons directory not found \")",
       "Bash(npm run typecheck:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(npm install:*)",
+      "Bash(npx convex:*)",
+      "Bash(npm run tauri:*)",
+      "Bash(dir node_modulesconvexbin 2)",
+      "Bash(dir node_modulesconvexdistbin 2)",
+      "Bash(dir node_modulesconvex /b)",
+      "Bash(where:*)",
+      "Bash(rustc:*)",
+      "Bash(test:*)",
+      "Bash(\"$HOME/.cargo/bin/rustc\" --version)",
+      "Bash(export PATH=\"$HOME/.cargo/bin:$PATH\")",
+      "Bash(\"C:/Program Files \\(x86\\)/Microsoft Visual Studio/Installer/vswhere.exe\" -latest -property installationPath)",
+      "Bash(find:*)",
+      "Bash(cmd //c \"\"\"C:/Program Files \\(x86\\)/Microsoft Visual Studio/18/BuildTools/VC/Auxiliary/Build/vcvars64.bat\"\" >nul 2>&1 && set PATH=%USERPROFILE%\\\\.cargo\\\\bin;%PATH% && npm run tauri dev\")",
+      "Bash(cmd //c \"call \"\"C:/Program Files \\(x86\\)/Microsoft Visual Studio/18/BuildTools/VC/Auxiliary/Build/vcvars64.bat\"\" && set PATH=%USERPROFILE%\\\\.cargo\\\\bin;%PATH% && cargo --version && npm run tauri dev\")",
+      "Bash(cmd //c \"C:\\\\Users\\\\haris\\\\Documents\\\\Projects\\\\Absolute Cinema\\\\run-tauri.bat\")",
+      "Bash(python3 -c \"\nwith open\\(r''C:\\\\Users\\\\haris\\\\Documents\\\\Projects\\\\Absolute Cinema\\\\run-tauri.bat'', ''w''\\) as f:\n    f.write\\(''@echo off\\\\r\\\\n''\\)\n    f.write\\(''call \"\"C:\\\\Program Files \\(x86\\)\\\\Microsoft Visual Studio\\\\18\\\\BuildTools\\\\VC\\\\Auxiliary\\\\Build\\\\vcvars64.bat\"\"\\\\r\\\\n''\\)\n    f.write\\(''set PATH=C:\\\\Users\\\\haris\\\\.cargo\\\\bin;%PATH%\\\\r\\\\n''\\)\n    f.write\\(''npm run tauri dev\\\\r\\\\n''\\)\n\")",
+      "Bash(node -e \"\nconst fs = require\\(''fs''\\);\nconst content = ''@echo off\\\\r\\\\ncall \"\"C:\\\\\\\\Program Files \\(x86\\)\\\\\\\\Microsoft Visual Studio\\\\\\\\18\\\\\\\\BuildTools\\\\\\\\VC\\\\\\\\Auxiliary\\\\\\\\Build\\\\\\\\vcvars64.bat\"\"\\\\r\\\\nset PATH=C:\\\\\\\\Users\\\\\\\\haris\\\\\\\\.cargo\\\\\\\\bin;%PATH%\\\\r\\\\nnpm run tauri dev\\\\r\\\\n'';\nfs.writeFileSync\\(''C:\\\\\\\\Users\\\\\\\\haris\\\\\\\\Documents\\\\\\\\Projects\\\\\\\\Absolute Cinema\\\\\\\\run-tauri.bat'', content\\);\nconsole.log\\(''Created run-tauri.bat''\\);\n\")",
+      "Bash(node -e \"const fs=require\\(''fs''\\); const p=require\\(''path''\\).join\\(process.cwd\\(\\),''run-tauri.bat''\\); fs.writeFileSync\\(p,''@echo off\\\\r\\\\ncall \"\"C:\\\\Program Files \\(x86\\)\\\\Microsoft Visual Studio\\\\18\\\\BuildTools\\\\VC\\\\Auxiliary\\\\Build\\\\vcvars64.bat\"\"\\\\r\\\\nset PATH=C:\\\\Users\\\\haris\\\\.cargo\\\\bin;%PATH%\\\\r\\\\nnpm run tauri dev\\\\r\\\\n''\\); console.log\\(''wrote'',p\\);\")",
+      "Bash(dir:*)",
+      "Bash(ls:*)",
+      "Bash(CONVEX_TRACE_FILE=1 npx convex deploy:*)",
+      "Bash(python3:*)",
+      "Bash(node -e:*)"
     ]
   }
 }

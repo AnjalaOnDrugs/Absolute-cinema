@@ -12,6 +12,7 @@ import searchLogo from '../assets/search_logo.png';
 import logsLogo from '../assets/logs_logo.png';
 import { CreateRoomModal } from '../components/CreateRoomModal';
 import { UserProfileModal } from '../components/UserProfileModal';
+import { AddCustomMovieModal } from '../components/AddCustomMovieModal';
 import { getPopularMovies, TMDBMovie, getImageUrl, searchMovies } from '../lib/tmdb';
 import { useEffect } from 'react';
 
@@ -23,6 +24,8 @@ export function HomePage() {
     const [selectedMovieForRoom, setSelectedMovieForRoom] = useState<TMDBMovie | null>(null);
     const [movieSearchQuery, setMovieSearchQuery] = useState('');
     const [isSearchingMovies, setIsSearchingMovies] = useState(false);
+    const [showAddMovieModal, setShowAddMovieModal] = useState(false);
+    const [editingMovie, setEditingMovie] = useState<{ _id: string; title: string; poster?: string; year?: number; imdbScore?: number; overview?: string } | null>(null);
     const { token, logout, user } = useAuth();
     const navigate = useNavigate();
 
@@ -30,6 +33,12 @@ export function HomePage() {
     const myRooms = useQuery(api.rooms.listMyRooms, { token: token ?? undefined });
     const joinRoomMutation = useMutation(api.roomMembers.joinRoom);
     const watchLogs = useQuery(api.watchLogs.getWatchLogs, { token: token ?? "" });
+    const customMovies = useQuery(api.customMovies.listCustomMovies);
+    const deleteCustomMovieMutation = useMutation(api.customMovies.deleteCustomMovie);
+    const customMovieSearch = useQuery(
+        api.customMovies.searchCustomMovies,
+        movieSearchQuery.trim().length >= 2 ? { query: movieSearchQuery.trim() } : "skip"
+    );
 
     useEffect(() => {
         const fetchMovies = async () => {
@@ -69,6 +78,18 @@ export function HomePage() {
 
     const handleStartRoomFromMovie = (movie: TMDBMovie) => {
         setSelectedMovieForRoom(movie);
+        setShowCreateModal(true);
+    };
+
+    const handleStartRoomFromCustomMovie = (movie: { title: string; poster?: string }) => {
+        setSelectedMovieForRoom({
+            id: 0,
+            title: movie.title,
+            overview: '',
+            poster_path: '',
+            release_date: '',
+            vote_average: 0,
+        });
         setShowCreateModal(true);
     };
 
@@ -232,43 +253,137 @@ export function HomePage() {
                     <section>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
                             <h2 style={{ margin: 0 }}>{movieSearchQuery ? 'Search Results' : 'Popular Movies'}</h2>
-                            <div style={{ position: 'relative', width: '300px' }}>
-                                <input
-                                    type="text"
-                                    placeholder="Search movies..."
-                                    value={movieSearchQuery}
-                                    onChange={(e) => setMovieSearchQuery(e.target.value)}
-                                    className="input"
-                                    style={{ paddingLeft: '40px' }}
-                                />
-                                <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}>
-                                    <img src={searchLogo} alt="" style={{ height: '16px', width: '16px', filter: 'brightness(0) invert(0.7)' }} />
-                                </span>
-                                {isSearchingMovies && (
-                                    <div className="spinner" style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', width: '16px', height: '16px' }} />
-                                )}
+                            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                                <button
+                                    className="btn btn-secondary"
+                                    onClick={() => setShowAddMovieModal(true)}
+                                    style={{ whiteSpace: 'nowrap' }}
+                                >
+                                    + Add Custom Movie
+                                </button>
+                                <div style={{ position: 'relative', width: '300px' }}>
+                                    <input
+                                        type="text"
+                                        placeholder="Search movies..."
+                                        value={movieSearchQuery}
+                                        onChange={(e) => setMovieSearchQuery(e.target.value)}
+                                        className="input"
+                                        style={{ paddingLeft: '40px' }}
+                                    />
+                                    <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}>
+                                        <img src={searchLogo} alt="" style={{ height: '16px', width: '16px', filter: 'brightness(0) invert(0.7)' }} />
+                                    </span>
+                                    {isSearchingMovies && (
+                                        <div className="spinner" style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', width: '16px', height: '16px' }} />
+                                    )}
+                                </div>
                             </div>
                         </div>
-                        <div className="grid grid-cols-4" style={{ gap: '24px' }}>
-                            {popularMovies.map((movie) => (
-                                <div key={movie.id} className="room-card" style={{ padding: 0, overflow: 'hidden', cursor: 'pointer' }} onClick={() => handleStartRoomFromMovie(movie)}>
-                                    <div style={{ position: 'relative', paddingTop: '150%' }}>
-                                        <img src={getImageUrl(movie.poster_path)} alt={movie.title} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
-                                        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(transparent, rgba(0,0,0,0.9))', padding: '20px' }}>
-                                            <h3 style={{ margin: 0, fontSize: '1.1rem' }}>{movie.title}</h3>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
-                                                <span style={{ color: 'var(--primary)', fontWeight: 600 }}>⭐ {movie.vote_average.toFixed(1)}</span>
-                                                <span style={{ fontSize: '0.8rem', color: '#ccc' }}>{movie.release_date?.split('-')[0]}</span>
+
+                        {/* Custom Movies Section */}
+                        {(() => {
+                            const displayCustomMovies = movieSearchQuery.trim().length >= 2
+                                ? (customMovieSearch || [])
+                                : (customMovies || []);
+                            return displayCustomMovies.length > 0 ? (
+                                <div style={{ marginBottom: '40px' }}>
+                                    <h3 style={{ marginBottom: '16px', fontSize: '1.2rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                                        Custom Movies
+                                    </h3>
+                                    <div className="grid grid-cols-4" style={{ gap: '24px' }}>
+                                        {displayCustomMovies.map((movie) => (
+                                            <div key={movie._id} className="room-card" style={{ padding: 0, overflow: 'hidden', cursor: 'pointer' }} onClick={() => handleStartRoomFromCustomMovie(movie)}>
+                                                <div style={{ position: 'relative', paddingTop: '150%' }}>
+                                                    <img
+                                                        src={movie.poster || 'https://via.placeholder.com/500x750?text=No+Poster'}
+                                                        alt={movie.title}
+                                                        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+                                                    />
+                                                    <div style={{ position: 'absolute', top: '8px', right: '8px', background: 'rgba(0,0,0,0.7)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem', color: 'var(--primary)' }}>
+                                                        Custom
+                                                    </div>
+                                                    {user && movie.addedBy === user._id && (
+                                                        <div style={{ position: 'absolute', top: '8px', left: '8px', display: 'flex', gap: '4px' }}>
+                                                            <button
+                                                                className="btn btn-secondary"
+                                                                style={{ padding: '4px 8px', fontSize: '0.75rem', minWidth: 'auto', background: 'rgba(0,0,0,0.7)', border: 'none' }}
+                                                                onClick={(e) => { e.stopPropagation(); setEditingMovie(movie); }}
+                                                                title="Edit movie"
+                                                            >
+                                                                Edit
+                                                            </button>
+                                                            <button
+                                                                className="btn btn-secondary"
+                                                                style={{ padding: '4px 8px', fontSize: '0.75rem', minWidth: 'auto', background: 'rgba(0,0,0,0.7)', border: 'none', color: '#ff4444' }}
+                                                                onClick={async (e) => {
+                                                                    e.stopPropagation();
+                                                                    if (!token) return;
+                                                                    if (confirm(`Delete "${movie.title}"?`)) {
+                                                                        try {
+                                                                            await deleteCustomMovieMutation({ token, movieId: movie._id as any });
+                                                                        } catch (err) {
+                                                                            console.error('Failed to delete movie:', err);
+                                                                        }
+                                                                    }
+                                                                }}
+                                                                title="Delete movie"
+                                                            >
+                                                                Delete
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(transparent, rgba(0,0,0,0.9))', padding: '20px' }}>
+                                                        <h3 style={{ margin: 0, fontSize: '1.1rem' }}>{movie.title}</h3>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
+                                                            {movie.imdbScore !== undefined && (
+                                                                <span style={{ color: 'var(--primary)', fontWeight: 600 }}>IMDb {movie.imdbScore.toFixed(1)}</span>
+                                                            )}
+                                                            {movie.year && (
+                                                                <span style={{ fontSize: '0.8rem', color: '#ccc' }}>{movie.year}</span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div style={{ padding: '16px', background: 'var(--bg-secondary)' }}>
+                                                    <button className="btn btn-primary" style={{ width: '100%', padding: '8px' }}>
+                                                        Start Room
+                                                    </button>
+                                                </div>
                                             </div>
-                                        </div>
-                                    </div>
-                                    <div style={{ padding: '16px', background: 'var(--bg-secondary)' }}>
-                                        <button className="btn btn-primary" style={{ width: '100%', padding: '8px' }}>
-                                            Start Room
-                                        </button>
+                                        ))}
                                     </div>
                                 </div>
-                            ))}
+                            ) : null;
+                        })()}
+
+                        {/* TMDB Movies */}
+                        <div>
+                            {(movieSearchQuery.trim().length >= 2 && (customMovieSearch || []).length > 0) && (
+                                <h3 style={{ marginBottom: '16px', fontSize: '1.2rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                                    From TMDB
+                                </h3>
+                            )}
+                            <div className="grid grid-cols-4" style={{ gap: '24px' }}>
+                                {popularMovies.map((movie) => (
+                                    <div key={movie.id} className="room-card" style={{ padding: 0, overflow: 'hidden', cursor: 'pointer' }} onClick={() => handleStartRoomFromMovie(movie)}>
+                                        <div style={{ position: 'relative', paddingTop: '150%' }}>
+                                            <img src={getImageUrl(movie.poster_path)} alt={movie.title} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                                            <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(transparent, rgba(0,0,0,0.9))', padding: '20px' }}>
+                                                <h3 style={{ margin: 0, fontSize: '1.1rem' }}>{movie.title}</h3>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
+                                                    <span style={{ color: 'var(--primary)', fontWeight: 600 }}>IMDb {movie.vote_average.toFixed(1)}</span>
+                                                    <span style={{ fontSize: '0.8rem', color: '#ccc' }}>{movie.release_date?.split('-')[0]}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div style={{ padding: '16px', background: 'var(--bg-secondary)' }}>
+                                            <button className="btn btn-primary" style={{ width: '100%', padding: '8px' }}>
+                                                Start Room
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     </section>
                 )}
@@ -347,6 +462,19 @@ export function HomePage() {
                 <UserProfileModal
                     userId={selectedUserId}
                     onClose={() => setSelectedUserId(null)}
+                />
+            )}
+
+            {showAddMovieModal && (
+                <AddCustomMovieModal
+                    onClose={() => setShowAddMovieModal(false)}
+                />
+            )}
+
+            {editingMovie && (
+                <AddCustomMovieModal
+                    editMovie={editingMovie}
+                    onClose={() => setEditingMovie(null)}
                 />
             )}
         </div>

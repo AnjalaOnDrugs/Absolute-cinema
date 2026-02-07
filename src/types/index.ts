@@ -58,3 +58,14 @@ export interface TMDBMovie {
     release_date: string;
     vote_average: number;
 }
+
+export interface CustomMovie {
+    _id: string;
+    title: string;
+    poster?: string;
+    year?: number;
+    imdbScore?: number;
+    overview?: string;
+    addedBy: string;
+    createdAt: number;
+}

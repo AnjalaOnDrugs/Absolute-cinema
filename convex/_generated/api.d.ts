@@ -8,8 +8,10 @@
  * @module
  */
 
+import type * as customMovies from "../customMovies.js";
 import type * as roomMembers from "../roomMembers.js";
 import type * as rooms from "../rooms.js";
+import type * as simple from "../simple.js";
 import type * as subtitles from "../subtitles.js";
 import type * as sync from "../sync.js";
 import type * as users from "../users.js";
@@ -23,8 +25,10 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  customMovies: typeof customMovies;
   roomMembers: typeof roomMembers;
   rooms: typeof rooms;
+  simple: typeof simple;
   subtitles: typeof subtitles;
   sync: typeof sync;
   users: typeof users;

@@ -26,5 +26,7 @@ export const getPopularMovies = async (): Promise<TMDBMovie[]> => {
 
 export const getImageUrl = (path: string | null | undefined) => {
     if (!path) return 'https://via.placeholder.com/500x750?text=No+Poster';
+    // If it's already a full URL or base64 data URL, return as-is
+    if (path.startsWith('http') || path.startsWith('data:')) return path;
     return `${IMAGE_BASE_URL}${path}`;
 };

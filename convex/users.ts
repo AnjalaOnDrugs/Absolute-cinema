@@ -168,7 +168,6 @@ export const getCurrentUser = query({
         return {
             _id: user._id,
             username: user.username,
-            email: user.email,
             displayName: user.displayName,
             profilePicture: user.profilePicture,
             isOnline: user.isOnline,

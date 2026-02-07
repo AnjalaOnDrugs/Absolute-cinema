@@ -62,6 +62,19 @@ export default defineSchema({
     .index("by_token", ["token"])
     .index("by_user", ["userId"]),
 
+  // Custom movies table - user-added movies not in TMDB
+  customMovies: defineTable({
+    title: v.string(),
+    poster: v.optional(v.string()), // URL to poster image
+    year: v.optional(v.number()),
+    imdbScore: v.optional(v.number()), // 0-10
+    overview: v.optional(v.string()),
+    addedBy: v.id("users"),
+    createdAt: v.number(),
+  }).searchIndex("by_title", {
+    searchField: "title",
+  }),
+
   // Watch logs table - stores history of watched movies
   watchLogs: defineTable({
     userId: v.id("users"),

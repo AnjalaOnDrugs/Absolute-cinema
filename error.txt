@@ -1,0 +1,35 @@
+
+> absolute-cinema@0.1.0 typecheck
+> tsc --noEmit
+
+src/components/CreateRoomModal.tsx(35,48): error TS2339: Property 'rooms' does not exist on type '{}'.
+src/components/PostWatchModal.tsx(22,41): error TS2339: Property 'watchLogs' does not exist on type '{}'.
+src/components/SubtitleModal.tsx(22,49): error TS2339: Property 'subtitles' does not exist on type '{}'.
+src/components/SubtitleModal.tsx(23,49): error TS2339: Property 'subtitles' does not exist on type '{}'.
+src/components/SubtitleModal.tsx(24,54): error TS2339: Property 'subtitles' does not exist on type '{}'.
+src/components/UserProfileModal.tsx(13,38): error TS2339: Property 'users' does not exist on type '{}'.
+src/components/UserProfileModal.tsx(14,36): error TS2339: Property 'watchLogs' does not exist on type '{}'.
+src/components/UserProfileModal.tsx(85,45): error TS7006: Parameter 'log' implicitly has an 'any' type.
+src/pages/HomePage.tsx(29,38): error TS2339: Property 'rooms' does not exist on type '{}'.
+src/pages/HomePage.tsx(30,34): error TS2339: Property 'rooms' does not exist on type '{}'.
+src/pages/HomePage.tsx(31,46): error TS2339: Property 'roomMembers' does not exist on type '{}'.
+src/pages/HomePage.tsx(32,36): error TS2339: Property 'watchLogs' does not exist on type '{}'.
+src/pages/HomePage.tsx(131,51): error TS7006: Parameter 'room' implicitly has an 'any' type.
+src/pages/HomePage.tsx(174,55): error TS7006: Parameter 'room' implicitly has an 'any' type.
+src/pages/HomePage.tsx(291,44): error TS7006: Parameter 'log' implicitly has an 'any' type.
+src/pages/HomePage.tsx(324,68): error TS7006: Parameter 'name' implicitly has an 'any' type.
+src/pages/HomePage.tsx(324,74): error TS7006: Parameter 'i' implicitly has an 'any' type.
+src/pages/LoginPage.tsx(25,43): error TS2339: Property 'users' does not exist on type '{}'.
+src/pages/RegisterPage.tsx(61,46): error TS2339: Property 'users' does not exist on type '{}'.
+src/pages/RoomPage.tsx(75,31): error TS2339: Property 'rooms' does not exist on type '{}'.
+src/pages/RoomPage.tsx(76,34): error TS2339: Property 'roomMembers' does not exist on type '{}'.
+src/pages/RoomPage.tsx(77,40): error TS2339: Property 'roomMembers' does not exist on type '{}'.
+src/pages/RoomPage.tsx(81,36): error TS2339: Property 'sync' does not exist on type '{}'.
+src/pages/RoomPage.tsx(83,49): error TS2339: Property 'roomMembers' does not exist on type '{}'.
+src/pages/RoomPage.tsx(84,47): error TS2339: Property 'roomMembers' does not exist on type '{}'.
+src/pages/RoomPage.tsx(85,48): error TS2339: Property 'rooms' does not exist on type '{}'.
+src/pages/RoomPage.tsx(86,42): error TS2339: Property 'sync' does not exist on type '{}'.
+src/pages/RoomPage.tsx(87,43): error TS2339: Property 'sync' does not exist on type '{}'.
+src/pages/RoomPage.tsx(88,42): error TS2339: Property 'sync' does not exist on type '{}'.
+src/pages/RoomPage.tsx(97,41): error TS2339: Property 'utils' does not exist on type '{}'.
+src/pages/RoomPage.tsx(591,55): error TS7006: Parameter 'm' implicitly has an 'any' type.

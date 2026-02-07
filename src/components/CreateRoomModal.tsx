@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useMutation } from 'convex/react';
+import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -7,6 +7,7 @@ import logo from '../assets/logo.png';
 import { searchMovies, TMDBMovie } from '../lib/tmdb';
 import { useEffect, useRef } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
+import { AddCustomMovieModal } from './AddCustomMovieModal';
 
 interface CreateRoomModalProps {
     onClose: () => void;
@@ -26,6 +27,7 @@ export function CreateRoomModal({ onClose, initialMovieTitle }: CreateRoomModalP
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [mediaType, setMediaType] = useState('.mp4');
     const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
+    const [showAddCustomMovie, setShowAddCustomMovie] = useState(false);
     const suggestionRef = useRef<HTMLDivElement>(null);
 
     const mediaTypes = ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.flv'];
@@ -33,12 +35,19 @@ export function CreateRoomModal({ onClose, initialMovieTitle }: CreateRoomModalP
     const { token } = useAuth();
     const navigate = useNavigate();
     const createRoomMutation = useMutation(api.rooms.createRoom);
+    const customMovieResults = useQuery(
+        api.customMovies.searchCustomMovies,
+        movieTitle.length >= 2 ? { query: movieTitle } : "skip"
+    );
 
     useEffect(() => {
         const fetchSuggestions = async () => {
             if (movieTitle.length >= 4) {
                 const results = await searchMovies(movieTitle);
                 setSuggestions(results.slice(0, 5));
+                setShowSuggestions(true);
+            } else if (movieTitle.length >= 2) {
+                setSuggestions([]);
                 setShowSuggestions(true);
             } else {
                 setSuggestions([]);
@@ -125,11 +134,11 @@ export function CreateRoomModal({ onClose, initialMovieTitle }: CreateRoomModalP
                                 placeholder="Search for a movie..."
                                 value={movieTitle}
                                 onChange={(e) => setMovieTitle(e.target.value)}
-                                onFocus={() => movieTitle.length >= 4 && setShowSuggestions(true)}
+                                onFocus={() => movieTitle.length >= 2 && setShowSuggestions(true)}
                                 required
                                 autoComplete="off"
                             />
-                            {showSuggestions && suggestions.length > 0 && (
+                            {showSuggestions && (suggestions.length > 0 || (customMovieResults && customMovieResults.length > 0) || movieTitle.length >= 2) && (
                                 <div
                                     ref={suggestionRef}
                                     className="dropdown-suggestions"
@@ -144,30 +153,95 @@ export function CreateRoomModal({ onClose, initialMovieTitle }: CreateRoomModalP
                                         marginTop: '4px',
                                         zIndex: 1000,
                                         boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-                                        maxHeight: '200px',
+                                        maxHeight: '280px',
                                         overflowY: 'auto'
                                     }}
                                 >
-                                    {suggestions.map((movie) => (
-                                        <div
-                                            key={movie.id}
-                                            className="suggestion-item"
-                                            style={{
-                                                padding: '10px 16px',
-                                                cursor: 'pointer',
-                                                transition: 'background 0.2s',
-                                                borderBottom: '1px solid var(--border)'
-                                            }}
-                                            onClick={() => handleSelectMovie(movie)}
-                                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-tertiary)'}
-                                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                                        >
-                                            <div style={{ fontWeight: 500 }}>{movie.title}</div>
-                                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                                                {movie.release_date ? movie.release_date.split('-')[0] : 'N/A'}
+                                    {customMovieResults && customMovieResults.length > 0 && (
+                                        <>
+                                            <div style={{ padding: '6px 16px', fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                                Custom Movies
                                             </div>
-                                        </div>
-                                    ))}
+                                            {customMovieResults.map((movie) => (
+                                                <div
+                                                    key={movie._id}
+                                                    className="suggestion-item"
+                                                    style={{
+                                                        padding: '10px 16px',
+                                                        cursor: 'pointer',
+                                                        transition: 'background 0.2s',
+                                                        borderBottom: '1px solid var(--border)'
+                                                    }}
+                                                    onClick={() => {
+                                                        setMovieTitle(movie.title);
+                                                        setTmdbId(undefined);
+                                                        setMoviePoster(movie.poster || undefined);
+                                                        setName(`${movie.title} Room`);
+                                                        setShowSuggestions(false);
+                                                    }}
+                                                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-tertiary)'}
+                                                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                                >
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                        <div style={{ fontWeight: 500 }}>{movie.title}</div>
+                                                        <span style={{ fontSize: '0.7rem', color: 'var(--primary)', background: 'rgba(var(--primary-rgb, 255,255,255), 0.1)', padding: '1px 6px', borderRadius: '4px' }}>Custom</span>
+                                                    </div>
+                                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                                        {movie.year || 'N/A'}{movie.imdbScore !== undefined ? ` · IMDb ${movie.imdbScore}` : ''}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </>
+                                    )}
+                                    {suggestions.length > 0 && (
+                                        <>
+                                            {customMovieResults && customMovieResults.length > 0 && (
+                                                <div style={{ padding: '6px 16px', fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                                    From TMDB
+                                                </div>
+                                            )}
+                                            {suggestions.map((movie) => (
+                                                <div
+                                                    key={movie.id}
+                                                    className="suggestion-item"
+                                                    style={{
+                                                        padding: '10px 16px',
+                                                        cursor: 'pointer',
+                                                        transition: 'background 0.2s',
+                                                        borderBottom: '1px solid var(--border)'
+                                                    }}
+                                                    onClick={() => handleSelectMovie(movie)}
+                                                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-tertiary)'}
+                                                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                                >
+                                                    <div style={{ fontWeight: 500 }}>{movie.title}</div>
+                                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                                        {movie.release_date ? movie.release_date.split('-')[0] : 'N/A'}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </>
+                                    )}
+                                    <div
+                                        style={{
+                                            padding: '10px 16px',
+                                            cursor: 'pointer',
+                                            transition: 'background 0.2s',
+                                            color: 'var(--primary)',
+                                            fontWeight: 500,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '6px',
+                                        }}
+                                        onClick={() => {
+                                            setShowSuggestions(false);
+                                            setShowAddCustomMovie(true);
+                                        }}
+                                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-tertiary)'}
+                                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                    >
+                                        + Add "{movieTitle}" as custom movie
+                                    </div>
                                 </div>
                             )}
                         </div>
@@ -308,6 +382,16 @@ export function CreateRoomModal({ onClose, initialMovieTitle }: CreateRoomModalP
                     </div>
                 </form>
             </div>
+
+            {showAddCustomMovie && (
+                <AddCustomMovieModal
+                    initialTitle={movieTitle}
+                    onClose={() => setShowAddCustomMovie(false)}
+                    onMovieAdded={() => {
+                        setShowAddCustomMovie(false);
+                    }}
+                />
+            )}
         </div>
     );
 }
