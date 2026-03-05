@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as agora from "../agora.js";
 import type * as customMovies from "../customMovies.js";
 import type * as roomMembers from "../roomMembers.js";
 import type * as rooms from "../rooms.js";
@@ -16,6 +17,7 @@ import type * as subtitles from "../subtitles.js";
 import type * as sync from "../sync.js";
 import type * as users from "../users.js";
 import type * as utils from "../utils.js";
+import type * as voiceState from "../voiceState.js";
 import type * as watchLogs from "../watchLogs.js";
 
 import type {
@@ -25,6 +27,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  agora: typeof agora;
   customMovies: typeof customMovies;
   roomMembers: typeof roomMembers;
   rooms: typeof rooms;
@@ -33,6 +36,7 @@ declare const fullApi: ApiFromModules<{
   sync: typeof sync;
   users: typeof users;
   utils: typeof utils;
+  voiceState: typeof voiceState;
   watchLogs: typeof watchLogs;
 }>;
 

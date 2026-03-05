@@ -22,6 +22,9 @@ export const joinRoom = mutation({
             throw new Error("Room not found");
         }
 
+        // Check if room has a youtube URL loaded
+        const isYoutubeUrl = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.?be)\/.+$/.test(room.movieFileName.trim());
+
         // Check if already a member
         const existingMember = await ctx.db
             .query("roomMembers")
@@ -33,6 +36,13 @@ export const joinRoom = mutation({
         if (existingMember) {
             // Already a member, just update current room
             await ctx.db.patch(session.userId, { currentRoomId: args.roomId });
+
+            if (isYoutubeUrl && !existingMember.isReady) {
+                await ctx.db.patch(existingMember._id, {
+                    localFilePath: room.movieFileName.trim(),
+                    isReady: true,
+                });
+            }
             return existingMember._id;
         }
 
@@ -40,7 +50,8 @@ export const joinRoom = mutation({
         const memberId = await ctx.db.insert("roomMembers", {
             roomId: args.roomId,
             userId: session.userId,
-            isReady: false,
+            isReady: isYoutubeUrl,
+            localFilePath: isYoutubeUrl ? room.movieFileName.trim() : undefined,
             joinedAt: Date.now(),
         });
 
@@ -187,31 +198,60 @@ export const setFilePath = mutation({
             throw new Error("Room not found");
         }
 
-        // Extract filename from path - handle Windows and Unix paths
-        // Also handle potential URL encoding from Tauri
-        let normalizedPath = args.localFilePath;
-        try {
-            // Decode URI components if the path was encoded
-            normalizedPath = decodeURIComponent(normalizedPath);
-        } catch {
-            // Path wasn't encoded, use as-is
-        }
+        // Check for Youtube URL
+        const isYoutubeUrl = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.?be)\/.+$/.test(args.localFilePath);
 
-        const fileName = normalizedPath.split(/[/\\]/).pop()?.trim() || "";
-        const expectedFileName = room.movieFileName.trim();
+        let isValidFile = false;
+        let fileName = "";
+        let expectedFileName = room.movieFileName.trim();
+
+        if (isYoutubeUrl) {
+            fileName = args.localFilePath;
+
+            if (room.adminId === session.userId) {
+                // Admin is setting a YouTube URL. Update the room so everyone expects this URL.
+                await ctx.db.patch(room._id, { movieFileName: args.localFilePath });
+                expectedFileName = args.localFilePath;
+
+                // Automatically set this URL for all members so they don't have to enter it
+                const allMembers = await ctx.db
+                    .query("roomMembers")
+                    .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
+                    .collect();
+
+                for (const m of allMembers) {
+                    await ctx.db.patch(m._id, {
+                        localFilePath: args.localFilePath,
+                        isReady: true,
+                    });
+                }
+
+                return { isValid: true, expectedFileName: args.localFilePath, actualFileName: args.localFilePath };
+            } else {
+                // Viewer is setting it (or it's already set by admin)
+                isValidFile = args.localFilePath === expectedFileName;
+            }
+        } else {
+            // Extract filename from path - handle Windows and Unix paths
+            let normalizedPath = args.localFilePath;
+            try {
+                // Decode URI components if the path was encoded
+                normalizedPath = decodeURIComponent(normalizedPath);
+            } catch {
+                // Path wasn't encoded, use as-is
+            }
+
+            fileName = normalizedPath.split(/[/\\]/).pop()?.trim() || "";
+            isValidFile = fileName.toLowerCase() === expectedFileName.toLowerCase();
+        }
 
         // Debug logging
         console.log("File comparison:", {
             selectedPath: args.localFilePath,
-            normalizedPath,
             extractedFileName: fileName,
             expectedFileName: expectedFileName,
-            selectedLower: fileName.toLowerCase(),
-            expectedLower: expectedFileName.toLowerCase(),
+            isValidFile
         });
-
-        // Check if filename matches expected (case-insensitive)
-        const isValidFile = fileName.toLowerCase() === expectedFileName.toLowerCase();
 
         await ctx.db.patch(member._id, {
             localFilePath: args.localFilePath,

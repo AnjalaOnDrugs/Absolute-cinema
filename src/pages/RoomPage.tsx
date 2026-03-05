@@ -10,10 +10,13 @@ import { useAuth } from '../context/AuthContext';
 import { VideoPlayer } from '../components/VideoPlayer';
 import type { RoomMember } from '../types';
 import { SubtitleModal } from '../components/SubtitleModal';
+import { getPreScreenData, clearPreScreenData } from '../lib/downloadDir';
 import { getImageUrl } from '../lib/tmdb';
 import { PostWatchModal } from '../components/PostWatchModal';
 import { ConfirmationModal } from '../components/ConfirmationModal';
 import { UserProfileModal } from '../components/UserProfileModal';
+import { VoiceChatPanel } from '../components/VoiceChatPanel';
+import { useVoiceChat } from '../hooks/useVoiceChat';
 
 // Detect if running inside Tauri
 const isTauri = !!(window as any).__TAURI_INTERNALS__;
@@ -41,7 +44,14 @@ export function RoomPage() {
     const isLocalActionRef = useRef(false);
     const isProgrammaticActionRef = useRef(false);
     const currentFilePathRef = useRef<string | null>(null);
+    const [youtubeUrlInput, setYoutubeUrlInput] = useState('');
 
+
+    // Convex queries (room must be declared before useVoiceChat)
+    const room = useQuery(api.rooms.getRoom, roomId ? { roomId: roomId as Id<"rooms"> } : "skip");
+
+    // Voice chat
+    const voiceChat = useVoiceChat(roomId, user?._id, token, room?.highQualityAudio ?? false);
 
     // Subtitle state
     const [isSubtitleModalOpen, setIsSubtitleModalOpen] = useState(false);
@@ -72,7 +82,6 @@ export function RoomPage() {
     const [showUnsupportedModal, setShowUnsupportedModal] = useState(false);
 
     // Convex queries and mutations
-    const room = useQuery(api.rooms.getRoom, roomId ? { roomId: roomId as Id<"rooms"> } : "skip");
     const members = useQuery(api.roomMembers.getRoomMembers, roomId ? { roomId: roomId as Id<"rooms"> } : "skip");
     const _myMembership = useQuery(api.roomMembers.getMyMembership, {
         token: token ?? undefined,
@@ -263,30 +272,8 @@ export function RoomPage() {
         }
     }, [canControl, token, roomId, seekMutation]);
 
-    // Attach listeners strictly to the Ref if possible, but VideoPlayer attaches its own.
-    // However, for SYNC, we need to know when User triggers play/pause.
-    // VideoPlayer component doesn't expose onPlay etc props that are "user initiated" easily vs "programmatic".
-    // ACTUALLY, VideoPlayer logic uses `video.addEventListener('play', updateState)`.
-    // The Standard DOM 'play' event fires for both code and user.
-    // Our logic handles this via `isProgrammaticActionRef`.
-    // We need to attach OUR listeners to the video element.
-    // Since `videoRef` is passed to VideoPlayer and then to <video>, `videoRef.current` IS the video element.
-    // We can use an effect here to attach the sync listeners.
-
-    useEffect(() => {
-        const video = videoRef.current;
-        if (!video) return;
-
-        video.addEventListener('play', handlePlay);
-        video.addEventListener('pause', handlePause);
-        video.addEventListener('seeked', handleSeeked);
-
-        return () => {
-            video.removeEventListener('play', handlePlay);
-            video.removeEventListener('pause', handlePause);
-            video.removeEventListener('seeked', handleSeeked);
-        };
-    }, [videoSrc, handlePlay, handlePause, handleSeeked]); // Re-attach if src changes (new video element potentially?)
+    // Attach listeners directly to VideoPlayer instead of `videoRef.current` via DOM
+    // `VideoPlayer` component calls `onPlay`, `onPause`, `onSeeked` props now.
 
 
     // Handle sync state changes from server
@@ -410,7 +397,11 @@ export function RoomPage() {
             console.log('Loading saved file path:', _myMembership.localFilePath);
             currentFilePathRef.current = _myMembership.localFilePath;
 
-            if (isTauri) {
+            const isYoutubeUrl = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.?be)\/.+$/.test(_myMembership.localFilePath);
+
+            if (isYoutubeUrl) {
+                setVideoSrc(_myMembership.localFilePath);
+            } else if (isTauri) {
                 import('@tauri-apps/api/core').then(({ convertFileSrc }) => {
                     try {
                         const fileUrl = convertFileSrc(_myMembership.localFilePath!);
@@ -424,6 +415,68 @@ export function RoomPage() {
             // so the user will need to re-select the file.
         }
     }, [_myMembership, videoSrc]);
+
+    // Auto-apply pre-screen data (file path + subtitle) if the user pre-downloaded this room's movie
+    useEffect(() => {
+        if (!roomId || !_myMembership || !isTauri || videoSrc) return;
+        const prescreen = getPreScreenData(roomId);
+        if (!prescreen) return;
+
+        const applyPrescreen = async () => {
+            try {
+                const { convertFileSrc } = await import('@tauri-apps/api/core');
+
+                // Set file path in DB if not already ready
+                if (!_myMembership.isReady && token) {
+                    try {
+                        await setFilePathMutation({
+                            token,
+                            roomId: roomId as any,
+                            localFilePath: prescreen.filePath,
+                        });
+                    } catch (err) {
+                        console.warn('Pre-screen: setFilePath failed (file name mismatch?)', err);
+                    }
+                }
+
+                // Load video
+                currentFilePathRef.current = prescreen.filePath;
+                const fileUrl = convertFileSrc(prescreen.filePath);
+                setVideoSrc(fileUrl);
+
+                // Load subtitle if detected
+                if (prescreen.subtitlePath) {
+                    try {
+                        const { readTextFile } = await import('@tauri-apps/plugin-fs');
+                        const content = await readTextFile(prescreen.subtitlePath);
+                        // Convert SRT to VTT if needed
+                        const ext = prescreen.subtitlePath.split('.').pop()?.toLowerCase();
+                        let vttContent = content;
+                        if (ext === 'srt') {
+                            vttContent = 'WEBVTT\n\n' + content
+                                .replace(/\r\n/g, '\n')
+                                .replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2');
+                        }
+                        const blob = new Blob([vttContent], { type: 'text/vtt' });
+                        const url = URL.createObjectURL(blob);
+                        setSubtitleUrl(url);
+                        setSubtitleLabel(prescreen.subtitlePath.split(/[\\/]/).pop() || 'Subtitle');
+                        console.log('Pre-screen: subtitle loaded from', prescreen.subtitlePath);
+                    } catch (err) {
+                        console.warn('Pre-screen: could not load subtitle', err);
+                    }
+                }
+
+                // Clear so it doesn't re-apply on next visit
+                clearPreScreenData(roomId);
+                console.log('Pre-screen: applied file and subtitle');
+            } catch (err) {
+                console.error('Pre-screen apply failed:', err);
+            }
+        };
+
+        applyPrescreen();
+    }, [roomId, _myMembership, videoSrc, token]);
 
     // Hidden file input ref for browser fallback
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -471,6 +524,28 @@ export function RoomPage() {
         } else {
             // Browser fallback: trigger hidden file input
             fileInputRef.current?.click();
+        }
+    };
+
+    const handleYoutubeSubmit = async () => {
+        if (!youtubeUrlInput || !token || !roomId) return;
+
+        try {
+            const result = await setFilePathMutation({
+                token,
+                roomId: roomId as Id<"rooms">,
+                localFilePath: youtubeUrlInput
+            });
+
+            if (!result.isValid) {
+                alert("Failed to set YouTube URL.");
+                return;
+            }
+
+            currentFilePathRef.current = youtubeUrlInput;
+            setVideoSrc(youtubeUrlInput);
+        } catch (err) {
+            console.error('Failed to set YouTube URL:', err);
         }
     };
 
@@ -535,6 +610,7 @@ export function RoomPage() {
     };
 
     const executeLeaveRoom = async () => {
+        await voiceChat.leaveVoice();
         if (token && roomId) {
             await leaveRoomMutation({ token, roomId: roomId as Id<"rooms"> });
         }
@@ -548,6 +624,7 @@ export function RoomPage() {
     };
 
     const executeEndRoom = async () => {
+        await voiceChat.leaveVoice();
         if (token && roomId) {
             try {
                 await deleteRoomMutation({ token, roomId: roomId as Id<"rooms"> });
@@ -710,12 +787,33 @@ export function RoomPage() {
                                     <button className="btn btn-primary" onClick={handleSelectFile}>
                                         Choose File
                                     </button>
+                                    {isAdmin && (
+                                        <div style={{ marginTop: '20px', width: '100%', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                            <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Or start a YouTube Watch Party</div>
+                                            <div style={{ display: 'flex', gap: '8px' }}>
+                                                <input
+                                                    type="text"
+                                                    placeholder="Enter YouTube URL..."
+                                                    className="input"
+                                                    style={{ flex: 1 }}
+                                                    value={youtubeUrlInput}
+                                                    onChange={(e) => setYoutubeUrlInput(e.target.value)}
+                                                />
+                                                <button className="btn btn-secondary" onClick={handleYoutubeSubmit}>
+                                                    Load
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         ) : (
                             <VideoPlayer
                                 ref={videoRef}
                                 src={videoSrc}
+                                onPlay={handlePlay}
+                                onPause={handlePause}
+                                onSeeked={handleSeeked}
                                 poster={room.moviePoster}
                                 subtitleUrl={subtitleUrl}
                                 subtitleLabel={subtitleLabel}
@@ -814,6 +912,16 @@ export function RoomPage() {
                             </div>
                         ))}
                     </div>
+
+                    {roomId && user && (
+                        <VoiceChatPanel
+                            roomId={roomId}
+                            currentUserId={user._id}
+                            voiceChat={voiceChat}
+                            isAdmin={isAdmin}
+                            token={token}
+                        />
+                    )}
                 </div>
             </div>
 

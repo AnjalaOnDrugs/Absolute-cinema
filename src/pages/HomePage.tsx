@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { useAuth } from '../context/AuthContext';
@@ -13,8 +13,11 @@ import logsLogo from '../assets/logs_logo.png';
 import { CreateRoomModal } from '../components/CreateRoomModal';
 import { UserProfileModal } from '../components/UserProfileModal';
 import { AddCustomMovieModal } from '../components/AddCustomMovieModal';
+import { TorrentDownloadModal } from '../components/TorrentDownloadModal';
+import { DownloadManager } from '../components/DownloadManager';
+import { PreScreenModal } from '../components/PreScreenModal';
 import { getPopularMovies, TMDBMovie, getImageUrl, searchMovies } from '../lib/tmdb';
-import { useEffect } from 'react';
+import { listTorrents } from '../lib/torrent';
 
 export function HomePage() {
     const [showCreateModal, setShowCreateModal] = useState(false);
@@ -26,6 +29,16 @@ export function HomePage() {
     const [isSearchingMovies, setIsSearchingMovies] = useState(false);
     const [showAddMovieModal, setShowAddMovieModal] = useState(false);
     const [editingMovie, setEditingMovie] = useState<{ _id: string; title: string; poster?: string; year?: number; imdbScore?: number; overview?: string } | null>(null);
+    const [downloadMovieTitle, setDownloadMovieTitle] = useState<string | null>(null);
+    const [showDownloadManager, setShowDownloadManager] = useState(false);
+    const [preScreenRoom, setPreScreenRoom] = useState<{
+        roomId: string;
+        movieTitle: string;
+        magnetLink?: string;
+        localFileSource?: 'downloaded' | 'manual';
+    } | null>(null);
+    const [activeDownloads, setActiveDownloads] = useState(0);
+    const [completedDownloads, setCompletedDownloads] = useState(0);
     const { token, logout, user } = useAuth();
     const navigate = useNavigate();
 
@@ -39,6 +52,24 @@ export function HomePage() {
         api.customMovies.searchCustomMovies,
         movieSearchQuery.trim().length >= 2 ? { query: movieSearchQuery.trim() } : "skip"
     );
+
+    // Poll torrent list for header download indicator
+    useEffect(() => {
+        const poll = async () => {
+            try {
+                const list = await listTorrents();
+                const active = list.filter(t => t.progress_pct < 100).length;
+                const completed = list.filter(t => t.progress_pct >= 100).length;
+                setActiveDownloads(active);
+                setCompletedDownloads(completed);
+            } catch {
+                // not in Tauri or no session
+            }
+        };
+        poll();
+        const interval = setInterval(poll, 2000);
+        return () => clearInterval(interval);
+    }, []);
 
     useEffect(() => {
         const fetchMovies = async () => {
@@ -98,6 +129,9 @@ export function HomePage() {
             <Header
                 onLogout={logout}
                 onProfileClick={() => user?._id && setSelectedUserId(user._id)}
+                onDownloadClick={() => setShowDownloadManager(true)}
+                activeDownloads={activeDownloads}
+                completedDownloads={completedDownloads}
             />
 
             <div className="page-content">
@@ -133,13 +167,15 @@ export function HomePage() {
                         </button>
                     </div>
 
-                    <button
-                        className="btn btn-primary home-create-btn"
-                        onClick={() => setShowCreateModal(true)}
-                    >
-                        <img src={createRoomLogo} alt="" style={{ height: '1.2em', marginRight: '8px', filter: 'brightness(0) invert(1)' }} />
-                        Create Room
-                    </button>
+                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                        <button
+                            className="btn btn-primary home-create-btn"
+                            onClick={() => setShowCreateModal(true)}
+                        >
+                            <img src={createRoomLogo} alt="" style={{ height: '1.2em', marginRight: '8px', filter: 'brightness(0) invert(1)' }} />
+                            Create Room
+                        </button>
+                    </div>
                 </div>
 
                 {/* Rooms Tab Content */}
@@ -149,41 +185,60 @@ export function HomePage() {
                             <section style={{ marginBottom: '48px' }}>
                                 <h2 style={{ marginBottom: '24px', fontSize: '1.5rem', fontWeight: 700 }}>Your Active Rooms</h2>
                                 <div className="grid grid-cols-3" style={{ gap: '24px' }}>
-                                    {myRooms.map((room) => (
-                                        <div key={room._id} className={`room-card ${room.isPlaying ? 'room-card-playing' : ''}`} onClick={() => handleEnterRoom(room._id)}>
-                                            {room.moviePoster && (
-                                                <div
-                                                    className="room-card-poster"
-                                                    style={{ backgroundImage: `url(${getImageUrl(room.moviePoster)})` }}
-                                                />
-                                            )}
-                                            {room.isPlaying && (
-                                                <div className="room-card-playing-indicator">
-                                                    <div className="playing-bar"></div>
-                                                    <div className="playing-bar"></div>
-                                                    <div className="playing-bar"></div>
-                                                </div>
-                                            )}
-                                            <div className="room-card-content">
-                                                <div className="room-card-header">
-                                                    <h3 className="room-card-title">{room.name}</h3>
-                                                    <span className="room-card-badge">Your Room</span>
-                                                </div>
-                                                <div className="room-card-body">
-                                                    <p className="room-card-movie">
-                                                        <img src={logo} alt="" style={{ height: '1em', marginRight: '4px', verticalAlign: 'middle', opacity: 0.7 }} />
-                                                        {room.movieTitle}
-                                                    </p>
-                                                </div>
-                                                <div className="room-card-footer">
-                                                    <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-                                                        {room.memberCount || 0} viewers
-                                                    </span>
-                                                    <button className="btn btn-primary btn-sm">Enter</button>
+                                    {myRooms.map((room) => {
+                                        const isLocalRoom = !/^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.?be)\/.+$/.test(room.movieFileName);
+                                        return (
+                                            <div key={room._id} className={`room-card ${room.isPlaying ? 'room-card-playing' : ''}`} onClick={() => handleEnterRoom(room._id)}>
+                                                {room.moviePoster && (
+                                                    <div
+                                                        className="room-card-poster"
+                                                        style={{ backgroundImage: `url(${getImageUrl(room.moviePoster)})` }}
+                                                    />
+                                                )}
+                                                {room.isPlaying && (
+                                                    <div className="room-card-playing-indicator">
+                                                        <div className="playing-bar"></div>
+                                                        <div className="playing-bar"></div>
+                                                        <div className="playing-bar"></div>
+                                                    </div>
+                                                )}
+                                                <div className="room-card-content">
+                                                    <div className="room-card-header">
+                                                        <h3 className="room-card-title">{room.name}</h3>
+                                                        <span className="room-card-badge">Your Room</span>
+                                                    </div>
+                                                    <div className="room-card-body">
+                                                        <p className="room-card-movie">
+                                                            <img src={logo} alt="" style={{ height: '1em', marginRight: '4px', verticalAlign: 'middle', opacity: 0.7 }} />
+                                                            {room.movieTitle}
+                                                        </p>
+                                                    </div>
+                                                    <div className="room-card-footer">
+                                                        <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                                                            {room.memberCount || 0} viewers
+                                                        </span>
+                                                        <div style={{ display: 'flex', gap: '6px' }}>
+                                                            {isLocalRoom && (
+                                                                <button
+                                                                    className="btn btn-secondary btn-sm"
+                                                                    title="Pre-screen: download this movie before joining"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setPreScreenRoom({ roomId: room._id, movieTitle: room.movieTitle, magnetLink: (room as any).magnetLink, localFileSource: (room as any).localFileSource });
+                                                                    }}
+                                                                    style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', padding: '4px 8px' }}
+                                                                >
+                                                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                                                                    Pre-screen
+                                                                </button>
+                                                            )}
+                                                            <button className="btn btn-primary btn-sm">Enter</button>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </section>
                         )}
@@ -192,46 +247,65 @@ export function HomePage() {
                             <h2 style={{ marginBottom: '24px', fontSize: '1.5rem', fontWeight: 700 }}>Explore Public Rooms</h2>
                             {publicRooms && publicRooms.length > 0 ? (
                                 <div className="grid grid-cols-3" style={{ gap: '24px' }}>
-                                    {publicRooms.map((room) => (
-                                        <div key={room._id} className={`room-card ${room.isPlaying ? 'room-card-playing' : ''}`} onClick={() => handleJoinRoom(room._id)}>
-                                            {room.moviePoster && (
-                                                <div
-                                                    className="room-card-poster"
-                                                    style={{ backgroundImage: `url(${getImageUrl(room.moviePoster)})` }}
-                                                />
-                                            )}
-                                            {room.isPlaying && (
-                                                <div className="room-card-playing-indicator">
-                                                    <div className="playing-bar"></div>
-                                                    <div className="playing-bar"></div>
-                                                    <div className="playing-bar"></div>
-                                                </div>
-                                            )}
-                                            <div className="room-card-content">
-                                                <div className="room-card-info">
-                                                    <div className="room-card-header">
-                                                        <h3 className="room-card-title">{room.name}</h3>
+                                    {publicRooms.map((room) => {
+                                        const isLocalRoom = !/^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.?be)\/.+$/.test(room.movieFileName);
+                                        return (
+                                            <div key={room._id} className={`room-card ${room.isPlaying ? 'room-card-playing' : ''}`} onClick={() => handleJoinRoom(room._id)}>
+                                                {room.moviePoster && (
+                                                    <div
+                                                        className="room-card-poster"
+                                                        style={{ backgroundImage: `url(${getImageUrl(room.moviePoster)})` }}
+                                                    />
+                                                )}
+                                                {room.isPlaying && (
+                                                    <div className="room-card-playing-indicator">
+                                                        <div className="playing-bar"></div>
+                                                        <div className="playing-bar"></div>
+                                                        <div className="playing-bar"></div>
                                                     </div>
-                                                    <div className="room-card-body">
-                                                        <p className="room-card-movie">
-                                                            <img src={logo} alt="" style={{ height: '1em', marginRight: '4px', verticalAlign: 'middle', opacity: 0.7 }} />
-                                                            {room.movieTitle}
-                                                        </p>
+                                                )}
+                                                <div className="room-card-content">
+                                                    <div className="room-card-info">
+                                                        <div className="room-card-header">
+                                                            <h3 className="room-card-title">{room.name}</h3>
+                                                        </div>
+                                                        <div className="room-card-body">
+                                                            <p className="room-card-movie">
+                                                                <img src={logo} alt="" style={{ height: '1em', marginRight: '4px', verticalAlign: 'middle', opacity: 0.7 }} />
+                                                                {room.movieTitle}
+                                                            </p>
+                                                        </div>
                                                     </div>
-                                                </div>
-                                                <div className="room-card-footer">
-                                                    <div className="room-card-members">
-                                                        <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-                                                            {room.memberCount || 0} viewers
-                                                        </span>
+                                                    <div className="room-card-footer">
+                                                        <div className="room-card-members">
+                                                            <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                                                                {room.memberCount || 0} viewers
+                                                            </span>
+                                                        </div>
+                                                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                                            {isLocalRoom && (
+                                                                <button
+                                                                    className="btn btn-secondary btn-sm"
+                                                                    title="Pre-screen: download this movie before joining"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setPreScreenRoom({ roomId: room._id, movieTitle: room.movieTitle, magnetLink: (room as any).magnetLink, localFileSource: (room as any).localFileSource });
+                                                                    }}
+                                                                    style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', padding: '4px 8px' }}
+                                                                >
+                                                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                                                                    Pre-screen
+                                                                </button>
+                                                            )}
+                                                            <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                                                                by {room.adminName}
+                                                            </span>
+                                                        </div>
                                                     </div>
-                                                    <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-                                                        by {room.adminName}
-                                                    </span>
                                                 </div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             ) : (
                                 <div className="empty-state">
@@ -344,9 +418,20 @@ export function HomePage() {
                                                         </div>
                                                     </div>
                                                 </div>
-                                                <div style={{ padding: '16px', background: 'var(--bg-secondary)' }}>
-                                                    <button className="btn btn-primary" style={{ width: '100%', padding: '8px' }}>
+                                                <div style={{ padding: '16px', background: 'var(--bg-secondary)', display: 'flex', gap: '8px' }}>
+                                                    <button className="btn btn-primary" style={{ flex: 1, padding: '8px' }}>
                                                         Start Room
+                                                    </button>
+                                                    <button
+                                                        className="movie-download-btn"
+                                                        onClick={(e) => { e.stopPropagation(); setDownloadMovieTitle(movie.title); }}
+                                                        title="Download torrent"
+                                                    >
+                                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                                            <polyline points="7 10 12 15 17 10" />
+                                                            <line x1="12" y1="15" x2="12" y2="3" />
+                                                        </svg>
                                                     </button>
                                                 </div>
                                             </div>
@@ -376,9 +461,20 @@ export function HomePage() {
                                                 </div>
                                             </div>
                                         </div>
-                                        <div style={{ padding: '16px', background: 'var(--bg-secondary)' }}>
-                                            <button className="btn btn-primary" style={{ width: '100%', padding: '8px' }}>
+                                        <div style={{ padding: '16px', background: 'var(--bg-secondary)', display: 'flex', gap: '8px' }}>
+                                            <button className="btn btn-primary" style={{ flex: 1, padding: '8px' }}>
                                                 Start Room
+                                            </button>
+                                            <button
+                                                className="movie-download-btn"
+                                                onClick={(e) => { e.stopPropagation(); setDownloadMovieTitle(movie.title); }}
+                                                title="Download torrent"
+                                            >
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                                    <polyline points="7 10 12 15 17 10" />
+                                                    <line x1="12" y1="15" x2="12" y2="3" />
+                                                </svg>
                                             </button>
                                         </div>
                                     </div>
@@ -475,6 +571,29 @@ export function HomePage() {
                 <AddCustomMovieModal
                     editMovie={editingMovie}
                     onClose={() => setEditingMovie(null)}
+                />
+            )}
+
+            {downloadMovieTitle && (
+                <TorrentDownloadModal
+                    movieTitle={downloadMovieTitle}
+                    onClose={() => setDownloadMovieTitle(null)}
+                />
+            )}
+
+            {showDownloadManager && (
+                <DownloadManager
+                    onClose={() => setShowDownloadManager(false)}
+                />
+            )}
+
+            {preScreenRoom && (
+                <PreScreenModal
+                    roomId={preScreenRoom.roomId}
+                    movieTitle={preScreenRoom.movieTitle}
+                    magnetLink={preScreenRoom.magnetLink}
+                    localFileSource={preScreenRoom.localFileSource}
+                    onClose={() => setPreScreenRoom(null)}
                 />
             )}
         </div>

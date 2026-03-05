@@ -317,6 +317,101 @@ a:hover {
   gap: 16px;
 }
 
+/* Header Download Button */
+.header-download-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-normal);
+}
+
+.header-download-btn:hover {
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+  transform: scale(1.05);
+}
+
+.header-download-btn.downloading {
+  color: var(--info);
+  background: rgba(0, 128, 255, 0.12);
+}
+
+.header-download-btn.downloading svg {
+  animation: downloadBounce 1.2s ease-in-out infinite;
+}
+
+.header-download-btn.completed {
+  color: var(--success);
+  background: rgba(70, 211, 105, 0.12);
+}
+
+/* Download badge */
+.header-download-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  border-radius: var(--radius-full);
+  font-size: 0.65rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  line-height: 1;
+  pointer-events: none;
+  background: var(--bg-card-hover);
+  color: var(--text-secondary);
+  border: 2px solid var(--bg-secondary);
+}
+
+.header-download-badge.active {
+  background: var(--info);
+  color: #fff;
+  animation: badgePulse 2s ease-in-out infinite;
+}
+
+.header-download-badge.done {
+  background: var(--success);
+  color: #fff;
+  font-size: 0.7rem;
+}
+
+@keyframes downloadBounce {
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(2px);
+  }
+}
+
+@keyframes badgePulse {
+
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(0, 128, 255, 0.4);
+  }
+
+  50% {
+    transform: scale(1.1);
+    box-shadow: 0 0 8px 2px rgba(0, 128, 255, 0.3);
+  }
+}
+
 /* User Avatar */
 .avatar {
   width: 40px;
@@ -1312,6 +1407,8 @@ a:hover {
   border-radius: var(--radius-lg);
   padding: 20px;
   border: 1px solid var(--glass-border);
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .room-sidebar-header {
@@ -1339,6 +1436,338 @@ a:hover {
   background: var(--bg-secondary);
   border-radius: var(--radius-lg);
   border: 1px solid var(--glass-border);
+}
+
+/* Voice Chat */
+.voice-chat-panel {
+  padding: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--glass-border);
+  transition: background var(--transition-fast);
+  border-radius: var(--radius-md);
+}
+
+.voice-chat-panel--joinable {
+  cursor: pointer;
+}
+
+.voice-chat-panel--joinable:hover {
+  background: var(--bg-tertiary);
+}
+
+.voice-chat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.voice-chat-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.voice-chat-count {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.voice-chat-empty {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 12px 0;
+  font-style: italic;
+}
+
+.voice-chat-join-hint {
+  font-size: 0.75rem;
+  color: var(--success);
+  text-align: center;
+  padding: 8px 0 4px;
+  opacity: 0.8;
+  font-weight: 500;
+}
+
+.voice-chat-join-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--success);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity var(--transition-fast);
+}
+
+.voice-chat-join-btn:hover {
+  opacity: 0.9;
+}
+
+.voice-chat-join-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.voice-chat-controls {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--glass-border);
+}
+
+.voice-chat-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--glass-border);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.voice-chat-btn:hover {
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+}
+
+.voice-chat-btn--active {
+  background: var(--error);
+  border-color: var(--error);
+  color: #fff;
+}
+
+.voice-chat-btn--active:hover {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+}
+
+.voice-chat-btn--noise-active {
+  background: var(--success);
+  border-color: var(--success);
+  color: #fff;
+}
+
+.voice-chat-btn--noise-active:hover {
+  opacity: 0.85;
+}
+
+.voice-chat-btn--disconnect {
+  margin-left: auto;
+  background: transparent;
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.voice-chat-btn--disconnect:hover {
+  background: var(--error);
+  color: #fff;
+}
+
+.voice-chat-users {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.voice-chat-user {
+  border-radius: var(--radius-md);
+  padding: 6px 8px;
+  transition: background var(--transition-fast);
+}
+
+.voice-chat-user:hover {
+  background: var(--bg-tertiary);
+}
+
+.voice-chat-user-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.voice-chat-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-full);
+  background: var(--bg-card);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  overflow: hidden;
+  border: 2px solid transparent;
+  transition: border-color var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.voice-chat-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.voice-chat-avatar--speaking {
+  border-color: var(--success);
+  animation: speaking-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes speaking-pulse {
+
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(70, 211, 105, 0.4);
+  }
+
+  50% {
+    box-shadow: 0 0 0 4px rgba(70, 211, 105, 0);
+  }
+}
+
+.voice-chat-user--speaking .voice-chat-user-name {
+  color: var(--success);
+}
+
+.voice-chat-user-name {
+  font-size: 0.8rem;
+  font-weight: 500;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.voice-chat-you {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.voice-chat-muted-icon {
+  color: var(--error);
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.voice-chat-volume-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0 2px 36px;
+}
+
+.voice-chat-volume {
+  flex: 1;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--bg-card);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.voice-chat-volume::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--text-primary);
+  cursor: pointer;
+}
+
+.voice-chat-volume::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--text-primary);
+  border: none;
+  cursor: pointer;
+}
+
+.voice-chat-volume-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  min-width: 30px;
+  text-align: right;
+}
+
+/* HD Audio Toggle */
+.voice-chat-hq-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--glass-border);
+}
+
+.voice-chat-hq-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.voice-chat-hq-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.voice-chat-hq-desc {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.voice-chat-hq-switch {
+  position: relative;
+  width: 38px;
+  height: 20px;
+  border-radius: 10px;
+  border: none;
+  background: var(--bg-card);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.25s ease;
+  flex-shrink: 0;
+}
+
+.voice-chat-hq-switch--on {
+  background: var(--success);
+}
+
+.voice-chat-hq-switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: transform 0.25s ease;
+}
+
+.voice-chat-hq-switch--on .voice-chat-hq-switch-knob {
+  transform: translateX(18px);
 }
 
 /* File Selection */
@@ -1752,6 +2181,44 @@ a:hover {
   color: #e50914;
 }
 
+/* YouTube Quality Menu */
+.yt-quality-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  background: rgba(18, 18, 18, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 4px 0;
+  min-width: 110px;
+  z-index: 200;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+}
+
+.yt-quality-item {
+  display: block;
+  width: 100%;
+  padding: 6px 14px;
+  text-align: left;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  border: none;
+  cursor: pointer;
+  font-size: 0.82rem;
+  transition: background 0.15s;
+}
+
+.yt-quality-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.yt-quality-item.active {
+  color: #e50914;
+  font-weight: 600;
+}
+
 .player-btn svg {
   width: 20px;
   height: 20px;
@@ -1993,4 +2460,154 @@ a:hover {
   color: #ff8800;
   font-weight: 600;
   font-size: 0.9rem;
+}
+
+/* ===== Torrent / Download Styles ===== */
+
+.torrent-progress-track {
+  width: 100%;
+  height: 6px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.torrent-progress-bar {
+  height: 100%;
+  background: var(--gradient-primary);
+  border-radius: var(--radius-full);
+  transition: width 0.3s ease;
+  position: relative;
+}
+
+.torrent-progress-bar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.2) 50%,
+      transparent 100%);
+  animation: torrentShimmer 1.5s infinite;
+}
+
+@keyframes torrentShimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.torrent-item {
+  display: flex;
+  align-items: center;
+  padding: 16px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--glass-border);
+  transition: all var(--transition-fast);
+}
+
+.torrent-item:hover {
+  background: var(--bg-card-hover);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+/* Download button on movie cards */
+.movie-download-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.movie-download-btn:hover {
+  background: var(--primary);
+  border-color: var(--primary);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(229, 9, 20, 0.4);
+}
+
+.movie-download-btn svg {
+  flex-shrink: 0;
+}
+
+/* Download manager badge in header */
+.download-badge {
+  position: relative;
+  cursor: pointer;
+}
+
+.download-badge-count {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--primary);
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 700;
+  border-radius: var(--radius-full);
+  padding: 0 4px;
+  animation: badgePop 0.3s ease;
+}
+
+@keyframes badgePop {
+  0% {
+    transform: scale(0);
+  }
+
+  60% {
+    transform: scale(1.2);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* YTS torrent quality selector */
+.yts-torrent-option {
+  display: block;
+  width: 100%;
+  padding: 14px 16px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-align: left;
+}
+
+.yts-torrent-option:hover {
+  background: var(--bg-card-hover);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateX(4px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.yts-torrent-option:active {
+  transform: translateX(2px) scale(0.99);
 }

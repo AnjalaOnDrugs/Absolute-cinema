@@ -9,6 +9,8 @@ export interface Room {
     adminName?: string;
     isPublic: boolean;
     everyoneCanControl: boolean;
+    magnetLink?: string;
+    localFileSource?: 'downloaded' | 'manual';
     createdAt: number;
     memberCount?: number;
     members?: { displayName: string; profilePicture?: string }[];
@@ -48,6 +50,14 @@ export interface User {
     profilePicture?: string;
     isOnline: boolean;
     currentRoomId?: string;
+}
+
+export interface VoiceMember {
+    _id: string;
+    userId: string;
+    displayName: string;
+    profilePicture?: string;
+    isMuted: boolean;
 }
 
 export interface TMDBMovie {

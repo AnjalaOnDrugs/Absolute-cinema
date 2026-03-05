@@ -13,6 +13,8 @@ export const createRoom = mutation({
         isPublic: v.boolean(),
         everyoneCanControl: v.boolean(),
         localFilePath: v.optional(v.string()),
+        magnetLink: v.optional(v.string()),
+        localFileSource: v.optional(v.union(v.literal("downloaded"), v.literal("manual"))),
     },
     handler: async (ctx, args) => {
         // Verify session
@@ -37,6 +39,8 @@ export const createRoom = mutation({
             adminId: session.userId,
             isPublic: args.isPublic,
             everyoneCanControl: args.everyoneCanControl,
+            magnetLink: args.magnetLink,
+            localFileSource: args.localFileSource,
             createdAt: Date.now(),
         });
 
@@ -239,5 +243,35 @@ export const deleteRoom = mutation({
 
         // Delete the room
         await ctx.db.delete(args.roomId);
+    },
+});
+
+// Toggle high-quality audio setting for a room (admin only)
+export const toggleHighQualityAudio = mutation({
+    args: {
+        token: v.string(),
+        roomId: v.id("rooms"),
+        enabled: v.boolean(),
+    },
+    handler: async (ctx, args) => {
+        const session = await ctx.db
+            .query("sessions")
+            .withIndex("by_token", (q) => q.eq("token", args.token))
+            .first();
+
+        if (!session || session.expiresAt < Date.now()) {
+            throw new Error("Invalid session");
+        }
+
+        const room = await ctx.db.get(args.roomId);
+        if (!room) {
+            throw new Error("Room not found");
+        }
+
+        if (room.adminId !== session.userId) {
+            throw new Error("Only the admin can change audio settings");
+        }
+
+        await ctx.db.patch(args.roomId, { highQualityAudio: args.enabled });
     },
 });

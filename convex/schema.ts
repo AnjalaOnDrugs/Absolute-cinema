@@ -26,6 +26,9 @@ export default defineSchema({
     adminId: v.id("users"),
     isPublic: v.boolean(),
     everyoneCanControl: v.boolean(),
+    highQualityAudio: v.optional(v.boolean()),
+    magnetLink: v.optional(v.string()), // Magnet link used by admin to download (for pre-screen)
+    localFileSource: v.optional(v.union(v.literal("downloaded"), v.literal("manual"))), // How admin got the file
     createdAt: v.number(),
   })
     .index("by_admin", ["adminId"]),
@@ -74,6 +77,16 @@ export default defineSchema({
   }).searchIndex("by_title", {
     searchField: "title",
   }),
+
+  // Voice state table - tracks who is in voice chat per room
+  voiceState: defineTable({
+    roomId: v.id("rooms"),
+    userId: v.id("users"),
+    isMuted: v.boolean(),
+    joinedAt: v.number(),
+  })
+    .index("by_room", ["roomId"])
+    .index("by_room_and_user", ["roomId", "userId"]),
 
   // Watch logs table - stores history of watched movies
   watchLogs: defineTable({

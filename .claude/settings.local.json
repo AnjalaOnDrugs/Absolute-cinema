@@ -27,7 +27,12 @@
       "Bash(ls:*)",
       "Bash(CONVEX_TRACE_FILE=1 npx convex deploy:*)",
       "Bash(python3:*)",
-      "Bash(node -e:*)"
+      "Bash(node -e:*)",
+      "WebFetch(domain:docs.agora.io)",
+      "WebFetch(domain:api-ref.agora.io)",
+      "WebFetch(domain:www.npmjs.com)",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:github.com)"
     ]
   }
 }

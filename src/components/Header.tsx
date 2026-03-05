@@ -5,10 +5,17 @@ import logo from '../assets/logo.png';
 interface HeaderProps {
     onLogout: () => void;
     onProfileClick?: () => void;
+    onDownloadClick?: () => void;
+    activeDownloads?: number;
+    completedDownloads?: number;
 }
 
-export function Header({ onLogout, onProfileClick }: HeaderProps) {
+export function Header({ onLogout, onProfileClick, onDownloadClick, activeDownloads = 0, completedDownloads = 0 }: HeaderProps) {
     const { user, token } = useAuth();
+
+    const hasActive = activeDownloads > 0;
+    const hasCompleted = completedDownloads > 0 && !hasActive;
+    const totalCount = activeDownloads + completedDownloads;
 
     return (
         <header className="header">
@@ -20,6 +27,25 @@ export function Header({ onLogout, onProfileClick }: HeaderProps) {
             <div className="header-nav">
                 {token && user ? (
                     <>
+                        {/* Download indicator icon */}
+                        <button
+                            className={`header-download-btn ${hasActive ? 'downloading' : ''} ${hasCompleted ? 'completed' : ''}`}
+                            onClick={onDownloadClick}
+                            title="Downloads"
+                            type="button"
+                        >
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                <polyline points="7 10 12 15 17 10" />
+                                <line x1="12" y1="15" x2="12" y2="3" />
+                            </svg>
+                            {totalCount > 0 && (
+                                <span className={`header-download-badge ${hasActive ? 'active' : ''} ${hasCompleted ? 'done' : ''}`}>
+                                    {hasCompleted ? '✓' : totalCount}
+                                </span>
+                            )}
+                        </button>
+
                         <div
                             style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: onProfileClick ? 'pointer' : 'default' }}
                             onClick={onProfileClick}
@@ -57,3 +83,4 @@ export function Header({ onLogout, onProfileClick }: HeaderProps) {
         </header>
     );
 }
+

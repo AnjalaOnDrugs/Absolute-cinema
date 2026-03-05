@@ -1,4 +1,5 @@
-import { forwardRef, useEffect, useRef, useState, useCallback } from 'react';
+import { forwardRef, useEffect, useRef, useState, useCallback, useImperativeHandle } from 'react';
+import ReactPlayer from 'react-player';
 import { getImageUrl } from '../lib/tmdb';
 import settingsLogo from '../assets/settings_logo.png';
 import ccLogo from '../assets/cc_logo.png';
@@ -27,7 +28,7 @@ interface VideoPlayerProps {
     onFixIssues?: () => void;
 }
 
-export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(({
+export const VideoPlayer = forwardRef<any, VideoPlayerProps>(({
     src,
     poster,
     subtitleUrl,
@@ -57,7 +58,12 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(({
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [showControls, setShowControls] = useState(true);
     const [isHovering, setIsHovering] = useState(false);
-    const controlsTimeoutRef = useRef<number | null>(null);
+    const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const Player = ReactPlayer as any;
+
+    // Determine source type early — used by hover preview, refs, and controls
+    const isYoutube = src ? /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.?be)\/.+$/.test(src) : false;
 
     // Timeline Hover State
     const [hoverTime, setHoverTime] = useState<number | null>(null);
@@ -65,18 +71,74 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(({
     const previewVideoRef = useRef<HTMLVideoElement>(null);
 
     useEffect(() => {
-        if (previewVideoRef.current && hoverTime !== null && isFinite(hoverTime)) {
+        if (!isYoutube && previewVideoRef.current && hoverTime !== null && isFinite(hoverTime)) {
             previewVideoRef.current.currentTime = hoverTime;
         }
-    }, [hoverTime]);
+    }, [hoverTime, isYoutube]);
 
-    // This local ref is used if the parent doesn't provide one, but we expect the parent to provide one normally.
-    // However, to use it internally we need to ensure we have access to it.
-    // We'll use a callback ref or an object ref properly.
-    // For simplicity, we assume the parent passes a RefObject. If not, we'd need useImperativeHandle.
-    // But since we are replacing Plyr usage in RoomPage, and RoomPage uses videoRef, we can just use the forwarded ref.
-    // We need to cast it to utilize it internally.
-    const internalVideoRef = (ref as React.RefObject<HTMLVideoElement>);
+    // YouTube thumbnail preview — uses static thumbnails (1.jpg, 2.jpg, 3.jpg)
+    const ytVideoId = isYoutube && src ? getYouTubeVideoId(src) : null;
+    const ytPreviewThumb = ytVideoId && hoverTime !== null && duration > 0
+        ? getYtPreviewThumbnail(ytVideoId, hoverTime, duration)
+        : ytVideoId
+            ? `https://i.ytimg.com/vi/${ytVideoId}/hqdefault.jpg`
+            : null;
+
+    const htmlVideoRef = useRef<HTMLVideoElement>(null);
+    const reactPlayerRef = useRef<any>(null);
+
+    useImperativeHandle(ref, () => ({
+        get currentTime() {
+            if (isYoutube && reactPlayerRef.current) return reactPlayerRef.current.currentTime || 0;
+            if (htmlVideoRef.current) return htmlVideoRef.current.currentTime;
+            return currentTime;
+        },
+        set currentTime(time: number) {
+            if (isYoutube && reactPlayerRef.current) {
+                reactPlayerRef.current.currentTime = time;
+                setCurrentTime(time);
+            } else if (htmlVideoRef.current) {
+                htmlVideoRef.current.currentTime = time;
+                setCurrentTime(time);
+            }
+        },
+        get paused() {
+            if (isYoutube) return !isPlaying;
+            if (htmlVideoRef.current) return htmlVideoRef.current.paused;
+            return true;
+        },
+        get playbackRate() {
+            if (isYoutube && reactPlayerRef.current) return reactPlayerRef.current.playbackRate || 1;
+            if (htmlVideoRef.current) return htmlVideoRef.current.playbackRate;
+            return 1;
+        },
+        set playbackRate(rate: number) {
+            if (isYoutube && reactPlayerRef.current) {
+                reactPlayerRef.current.playbackRate = rate;
+            } else if (htmlVideoRef.current) {
+                htmlVideoRef.current.playbackRate = rate;
+            }
+        },
+        play: async () => {
+            if (isYoutube) {
+                setIsPlaying(true);
+                if (onPlay) onPlay();
+            } else if (htmlVideoRef.current) {
+                await htmlVideoRef.current.play();
+            }
+        },
+        pause: () => {
+            if (isYoutube) {
+                setIsPlaying(false);
+                if (onPause) onPause();
+            } else if (htmlVideoRef.current) {
+                htmlVideoRef.current.pause();
+            }
+        }
+    }));
+
+    // Fallback for native DOM elements that are queried internally within VideoPlayer
+    const internalVideoRef = htmlVideoRef;
 
     const formatTime = (time: number) => {
         if (!isFinite(time)) return "0:00";
@@ -141,6 +203,54 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(({
             document.body.style.cursor = 'default';
         };
     }, [isPlaying, isFullscreen]);
+
+    // YouTube-specific controls
+    const YT_QUALITIES = [
+        { value: 'default', label: 'Auto' },
+        { value: 'hd2160', label: '4K' },
+        { value: 'hd1440', label: '1440p' },
+        { value: 'hd1080', label: '1080p HD' },
+        { value: 'hd720', label: '720p HD' },
+        { value: 'large', label: '480p' },
+        { value: 'medium', label: '360p' },
+        { value: 'small', label: '240p' },
+    ];
+    const [ytQuality, setYtQuality] = useState('default');
+    const [showQualityMenu, setShowQualityMenu] = useState(false);
+    const [ytCCEnabled, setYtCCEnabled] = useState(false);
+
+    const [ytAvailableQualities, setYtAvailableQualities] = useState<string[]>([]);
+
+    const handleYtQuality = (quality: string) => {
+        setYtQuality(quality);
+        setShowQualityMenu(false);
+        // Access the internal YT IFrame API via youtube-video-element's .api property
+        const ytApi = (reactPlayerRef.current as any)?.api;
+        if (ytApi?.setPlaybackQuality) {
+            ytApi.setPlaybackQuality(quality);
+        }
+    };
+
+    const toggleYtCC = () => {
+        // Access the internal YT IFrame API via youtube-video-element's .api property
+        const ytApi = (reactPlayerRef.current as any)?.api;
+        if (ytApi) {
+            if (ytCCEnabled) {
+                // Turn off captions by setting an empty track
+                ytApi.setOption?.('captions', 'track', {});
+            } else {
+                // Turn on captions - get available caption tracks and enable the first one
+                const tracklist = ytApi.getOption?.('captions', 'tracklist') || [];
+                if (tracklist.length > 0) {
+                    ytApi.setOption?.('captions', 'track', { languageCode: tracklist[0].languageCode });
+                } else {
+                    // Fallback: try loading with auto-generated captions
+                    ytApi.loadModule?.('captions');
+                }
+            }
+            setYtCCEnabled(prev => !prev);
+        }
+    };
 
     // Subtitle State
     const [cues, setCues] = useState<{ start: number; end: number; text: string }[]>([]);
@@ -223,9 +333,10 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(({
             setActiveSubtitle(active ? active.text : null);
         };
 
+        if (isYoutube) return;
         video.addEventListener('timeupdate', updateState);
-        video.addEventListener('play', updateState);
-        video.addEventListener('pause', updateState);
+        video.addEventListener('play', () => { updateState(); if (onPlay) onPlay(); });
+        video.addEventListener('pause', () => { updateState(); if (onPause) onPause(); });
         video.addEventListener('loadedmetadata', updateState);
         video.addEventListener('volumechange', updateState);
 
@@ -256,6 +367,7 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(({
 
         video.addEventListener('loadeddata', handleLoadedData);
         video.addEventListener('error', handleError);
+        video.addEventListener('seeked', () => { if (onSeeked) onSeeked(); });
 
         return () => {
             video.removeEventListener('timeupdate', updateState);
@@ -295,7 +407,14 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(({
     }, []);
 
     const togglePlay = () => {
-        if (internalVideoRef?.current) {
+        if (isYoutube) {
+            setIsPlaying((prev) => {
+                const newPlaying = !prev;
+                if (newPlaying && onPlay) onPlay();
+                if (!newPlaying && onPause) onPause();
+                return newPlaying;
+            });
+        } else if (internalVideoRef?.current) {
             if (internalVideoRef.current.paused) {
                 internalVideoRef.current.play();
             } else {
@@ -306,7 +425,11 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(({
 
     const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
         const time = parseFloat(e.target.value);
-        if (internalVideoRef?.current) {
+        if (isYoutube && reactPlayerRef.current) {
+            reactPlayerRef.current.currentTime = time;
+            setCurrentTime(time);
+            if (onSeeked) onSeeked();
+        } else if (internalVideoRef?.current) {
             internalVideoRef.current.currentTime = time;
             setCurrentTime(time);
         }
@@ -314,15 +437,20 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(({
 
     const handleVolume = (e: React.ChangeEvent<HTMLInputElement>) => {
         const vol = parseFloat(e.target.value);
-        if (internalVideoRef?.current) {
+        setVolume(vol);
+        setIsMuted(vol === 0);
+        if (!isYoutube && internalVideoRef?.current) {
             internalVideoRef.current.volume = vol;
             internalVideoRef.current.muted = vol === 0;
         }
     };
 
     const toggleMute = () => {
-        if (internalVideoRef?.current) {
+        if (isYoutube) {
+            setIsMuted(prev => !prev);
+        } else if (internalVideoRef?.current) {
             internalVideoRef.current.muted = !internalVideoRef.current.muted;
+            setIsMuted(internalVideoRef.current.muted);
         }
     };
 
@@ -347,14 +475,78 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(({
             onDoubleClick={toggleFullscreen}
         >
             {/* ... video ... */}
-            <video
-                ref={ref}
-                src={src || undefined}
-                className="custom-player-video"
-                onClick={togglePlay}
-                poster={getImageUrl(poster)}
-                playsInline
-            />
+            {isYoutube ? (
+                <div className="custom-player-video" onClick={togglePlay}>
+                    <div style={{ pointerEvents: 'none', width: '100%', height: '100%' }}>
+                        <Player
+                            ref={reactPlayerRef}
+                            src={src || undefined}
+                            width="100%"
+                            height="100%"
+                            playing={isPlaying}
+                            volume={isMuted ? 0 : volume}
+                            onTimeUpdate={(e: any) => {
+                                if (reactPlayerRef.current) {
+                                    const time = reactPlayerRef.current.currentTime;
+                                    setCurrentTime(time);
+                                    // Update subtitle cue for YouTube videos
+                                    if (cues.length > 0) {
+                                        const active = cues.find(c => time >= c.start && time <= c.end);
+                                        setActiveSubtitle(active ? active.text : null);
+                                    }
+                                }
+                                if (onTimeUpdate) onTimeUpdate();
+                            }}
+                            onDurationChange={(e: any) => {
+                                const d = e?.currentTarget?.duration || reactPlayerRef.current?.duration;
+                                if (d) setDuration(d);
+                            }}
+                            onPlay={() => {
+                                setIsPlaying(true);
+                                if (onPlay) onPlay();
+                                // Fetch available quality levels when video starts playing
+                                try {
+                                    const ytApi = (reactPlayerRef.current as any)?.api;
+                                    if (ytApi?.getAvailableQualityLevels) {
+                                        const levels = ytApi.getAvailableQualityLevels();
+                                        if (levels && levels.length > 0) {
+                                            setYtAvailableQualities(levels);
+                                        }
+                                    }
+                                } catch (e) { /* ignore */ }
+                            }}
+                            onPause={() => {
+                                setIsPlaying(false);
+                                if (onPause) onPause();
+                            }}
+                            onSeeked={() => {
+                                if (onSeeked) onSeeked();
+                            }}
+                            config={{
+                                youtube: {
+                                    controls: 0,
+                                    disablekb: 1,
+                                    fs: 0,
+                                    modestbranding: 1,
+                                    rel: 0,
+                                    showinfo: 0,
+                                    iv_load_policy: 3,
+                                    cc_load_policy: 1
+                                } as any
+                            }}
+                        />
+                    </div>
+                </div>
+            ) : (
+                <video
+                    ref={htmlVideoRef}
+                    src={src || undefined}
+                    className="custom-player-video"
+                    onClick={togglePlay}
+                    poster={getImageUrl(poster)}
+                    playsInline
+                />
+            )}
 
             {/* Custom Overlay Controls */}
             <div className={`custom-player-overlay ${!showControls && isPlaying && !isSettingsOpen ? 'hidden' : ''}`}>
@@ -428,14 +620,25 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(({
                                 visibility: hoverTime !== null ? 'visible' : 'hidden',
                             }}
                         >
-                            <video
-                                ref={previewVideoRef}
-                                src={src || undefined}
-                                className="preview-video"
-                                muted
-                                preload="auto"
-                                style={{ display: 'block' }}
-                            />
+                            {isYoutube ? (
+                                ytPreviewThumb && (
+                                    <img
+                                        className="preview-video"
+                                        src={ytPreviewThumb}
+                                        alt="Preview"
+                                        style={{ display: 'block' }}
+                                    />
+                                )
+                            ) : (
+                                <video
+                                    ref={previewVideoRef}
+                                    src={src || undefined}
+                                    className="preview-video"
+                                    muted
+                                    preload="auto"
+                                    style={{ display: 'block' }}
+                                />
+                            )}
                             <span className="timeline-time-text">{formatTime(hoverTime || 0)}</span>
                         </div>
                         <input
@@ -504,11 +707,46 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(({
                                     <span style={{ fontWeight: 600 }}>VLC</span>
                                 </button>
                             )}
+
+                            {/* YouTube Quality Selector */}
+                            {isYoutube && (
+                                <div style={{ position: 'relative' }}>
+                                    <button
+                                        className="player-btn"
+                                        onClick={() => setShowQualityMenu(prev => !prev)}
+                                        title="Quality"
+                                        style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '0 6px', width: 'auto' }}
+                                    >
+                                        <svg viewBox="0 0 24 24" style={{ width: '16px', height: '16px', flexShrink: 0 }}>
+                                            <path fill="currentColor" d="M19.59 7l-7.59 7.59L4.41 7 3 8.41l9 9 9-9z" />
+                                        </svg>
+                                        <span style={{ fontSize: '0.72rem', fontWeight: 600, letterSpacing: '0.02em' }}>
+                                            {YT_QUALITIES.find(q => q.value === ytQuality)?.label ?? 'Auto'}
+                                        </span>
+                                    </button>
+                                    {showQualityMenu && (
+                                        <div className="yt-quality-menu">
+                                            {YT_QUALITIES
+                                                .filter(q => q.value === 'default' || ytAvailableQualities.length === 0 || ytAvailableQualities.includes(q.value))
+                                                .map(q => (
+                                                    <button
+                                                        key={q.value}
+                                                        className={`yt-quality-item ${ytQuality === q.value ? 'active' : ''}`}
+                                                        onClick={() => handleYtQuality(q.value)}
+                                                    >
+                                                        {q.label}
+                                                    </button>
+                                                ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
                             {/* CC Toggle */}
                             <button
-                                className={`player-btn ${isSubtitleVisible ? 'active' : ''}`}
-                                onClick={() => setIsSubtitleVisible(!isSubtitleVisible)}
-                                title={isSubtitleVisible ? "Hide Subtitles" : "Show Subtitles"}
+                                className={`player-btn ${isYoutube ? (ytCCEnabled ? 'active' : '') : (isSubtitleVisible ? 'active' : '')}`}
+                                onClick={() => isYoutube ? toggleYtCC() : setIsSubtitleVisible(v => !v)}
+                                title={isYoutube ? (ytCCEnabled ? "Hide Captions" : "Show Captions") : (isSubtitleVisible ? "Hide Subtitles" : "Show Subtitles")}
                             >
                                 <img
                                     src={ccLogo}
@@ -517,31 +755,32 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(({
                                         height: '1.2em',
                                         width: 'auto',
                                         filter: 'brightness(0) invert(1)',
-                                        opacity: isSubtitleVisible ? 1 : 0.5,
+                                        opacity: (isYoutube ? ytCCEnabled : isSubtitleVisible) ? 1 : 0.5,
                                         transition: 'all 0.2s'
                                     }}
                                 />
                             </button>
 
-                            {/* Settings */}
-                            <button
-                                className="player-btn"
-                                onClick={() => setIsSettingsOpen(!isSettingsOpen)}
-                                title="Subtitle Settings"
-                            >
-                                <img
-                                    src={settingsLogo}
-                                    alt=""
-                                    style={{
-                                        height: '1.2em',
-                                        width: 'auto',
-                                        filter: 'brightness(0) invert(1)'
-                                    }}
-                                />
+                            {/* Settings (subtitle appearance — non-YouTube only) */}
+                            {!isYoutube && (
+                                <button
+                                    className="player-btn"
+                                    onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+                                    title="Subtitle Settings"
+                                >
+                                    <img
+                                        src={settingsLogo}
+                                        alt=""
+                                        style={{
+                                            height: '1.2em',
+                                            width: 'auto',
+                                            filter: 'brightness(0) invert(1)'
+                                        }}
+                                    />
+                                </button>
+                            )}
 
-                            </button>
-
-                            {onSubtitleClick && (
+                            {onSubtitleClick && !isYoutube && (
                                 <button className="player-btn" onClick={onSubtitleClick} title="Search/Upload Subtitles">
                                     <svg viewBox="0 0 24 24"><path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z" /></svg>
                                 </button>
@@ -605,6 +844,33 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(({
         </div>
     );
 });
+
+// ─── YouTube Preview Thumbnails ───────────────────────────────────────────────
+// YouTube provides 4 static thumbnails per video:
+//   0.jpg  – player background (same as hqdefault)
+//   1.jpg  – frame at ~25% of the video
+//   2.jpg  – frame at ~50% of the video
+//   3.jpg  – frame at ~75% of the video
+// We pick the closest one based on where the user hovers on the timeline.
+
+const getYouTubeVideoId = (url: string): string | null => {
+    const match = url?.match(
+        /(?:youtube\.com\/(?:[^/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?/\s]{11})/
+    );
+    return match ? match[1] : null;
+};
+
+const getYtPreviewThumbnail = (videoId: string, time: number, duration: number): string => {
+    // Map the hover time to one of 3 frame thumbnails:
+    //   1.jpg ≈ 25%,  2.jpg ≈ 50%,  3.jpg ≈ 75%
+    const pct = duration > 0 ? time / duration : 0;
+    let thumbIdx: number;
+    if (pct < 0.375) thumbIdx = 1;
+    else if (pct < 0.625) thumbIdx = 2;
+    else thumbIdx = 3;
+    return `https://i.ytimg.com/vi/${videoId}/${thumbIdx}.jpg`;
+};
+// ──────────────────────────────────────────────────────────────────────────────
 
 // Helper to parse VTT timestamp (00:00:00.000 or 00:00.000) to seconds
 const parseVttTimestamp = (timestamp: string): number => {
