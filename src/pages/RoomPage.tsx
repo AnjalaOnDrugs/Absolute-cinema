@@ -10,7 +10,8 @@ import { useAuth } from '../context/AuthContext';
 import { VideoPlayer } from '../components/VideoPlayer';
 import type { RoomMember } from '../types';
 import { SubtitleModal } from '../components/SubtitleModal';
-import { getPreScreenData, clearPreScreenData } from '../lib/downloadDir';
+import { getPreScreenData, clearPreScreenData, pickVideoFile, pickSubtitleFile, buildMovieDownloadDir } from '../lib/downloadDir';
+import { getProgress, scanDirectoryForMedia, formatBytes, type TorrentProgress } from '../lib/torrent';
 import { getImageUrl } from '../lib/tmdb';
 import { PostWatchModal } from '../components/PostWatchModal';
 import { ConfirmationModal } from '../components/ConfirmationModal';
@@ -79,7 +80,14 @@ export function RoomPage() {
     const [isConfirmEndOpen, setIsConfirmEndOpen] = useState(false);
     const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
 
+
     const [showUnsupportedModal, setShowUnsupportedModal] = useState(false);
+
+    // Download tracking state
+    const [activeTorrentId, setActiveTorrentId] = useState<number | null>(null);
+    const [dlProgress, setDlProgress] = useState<TorrentProgress | null>(null);
+    const [downloadingDir, setDownloadingDir] = useState<string | null>(null);
+    const [targetMovieTitle, setTargetMovieTitle] = useState<string | null>(null);
 
     // Convex queries and mutations
     const members = useQuery(api.roomMembers.getRoomMembers, roomId ? { roomId: roomId as Id<"rooms"> } : "skip");
@@ -418,21 +426,29 @@ export function RoomPage() {
 
     // Auto-apply pre-screen data (file path + subtitle) if the user pre-downloaded this room's movie
     useEffect(() => {
-        if (!roomId || !_myMembership || !isTauri || videoSrc) return;
+        if (!roomId || !_myMembership || !isTauri || videoSrc || activeTorrentId) return;
         const prescreen = getPreScreenData(roomId);
         if (!prescreen) return;
+
+        // If there's an active download from the creation modal, track it
+        if (prescreen.torrentId !== undefined) {
+            setActiveTorrentId(prescreen.torrentId);
+            setDownloadingDir(prescreen.downloadDir || null);
+            setTargetMovieTitle(prescreen.movieTitle || null);
+            return; // Don't apply yet, wait for download to finish
+        }
 
         const applyPrescreen = async () => {
             try {
                 const { convertFileSrc } = await import('@tauri-apps/api/core');
 
                 // Set file path in DB if not already ready
-                if (!_myMembership.isReady && token) {
+                if (!_myMembership.isReady && token && prescreen.filePath) {
                     try {
                         await setFilePathMutation({
                             token,
                             roomId: roomId as any,
-                            localFilePath: prescreen.filePath,
+                            localFilePath: prescreen.filePath as string,
                         });
                     } catch (err) {
                         console.warn('Pre-screen: setFilePath failed (file name mismatch?)', err);
@@ -440,9 +456,11 @@ export function RoomPage() {
                 }
 
                 // Load video
-                currentFilePathRef.current = prescreen.filePath;
-                const fileUrl = convertFileSrc(prescreen.filePath);
-                setVideoSrc(fileUrl);
+                if (prescreen.filePath) {
+                    currentFilePathRef.current = prescreen.filePath as string;
+                    const fileUrl = convertFileSrc(prescreen.filePath as string);
+                    setVideoSrc(fileUrl);
+                }
 
                 // Load subtitle if detected
                 if (prescreen.subtitlePath) {
@@ -476,7 +494,80 @@ export function RoomPage() {
         };
 
         applyPrescreen();
-    }, [roomId, _myMembership, videoSrc, token]);
+    }, [roomId, _myMembership, videoSrc, token, activeTorrentId]);
+
+    // Poll download progress if active
+    useEffect(() => {
+        if (!isTauri || activeTorrentId === null || !roomId || !_myMembership) return;
+
+        const interval = setInterval(async () => {
+            try {
+                const p = await getProgress(activeTorrentId);
+                setDlProgress(p);
+
+                if (p.progress_pct >= 100) {
+                    clearInterval(interval);
+
+                    // Download complete! Scan and pick files.
+                    if (downloadingDir && targetMovieTitle) {
+                        const movieDlDir = buildMovieDownloadDir(downloadingDir, targetMovieTitle);
+                        const files = await scanDirectoryForMedia(movieDlDir);
+                        const videoFile = pickVideoFile(files);
+                        const subtitleFile = pickSubtitleFile(files);
+
+                        if (videoFile) {
+                            // Update database
+                            if (token) {
+                                await setFilePathMutation({
+                                    token,
+                                    roomId: roomId as any,
+                                    localFilePath: videoFile
+                                });
+                            }
+
+                            // Load video in UI
+                            const { convertFileSrc } = await import('@tauri-apps/api/core');
+                            currentFilePathRef.current = videoFile;
+                            setVideoSrc(convertFileSrc(videoFile));
+
+                            // Load subtitle
+                            if (subtitleFile) {
+                                try {
+                                    const { readTextFile } = await import('@tauri-apps/plugin-fs');
+                                    const content = await readTextFile(subtitleFile);
+                                    const ext = subtitleFile.split('.').pop()?.toLowerCase();
+                                    let vttContent = content;
+                                    if (ext === 'srt') {
+                                        vttContent = 'WEBVTT\n\n' + content
+                                            .replace(/\r\n/g, '\n')
+                                            .replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2');
+                                    }
+                                    const blob = new Blob([vttContent], { type: 'text/vtt' });
+                                    const url = URL.createObjectURL(blob);
+                                    setSubtitleUrl(url);
+                                    setSubtitleLabel(subtitleFile.split(/[\\/]/).pop() || 'Subtitle');
+                                } catch (err) {
+                                    console.warn('Post-download: subtitle failed', err);
+                                }
+                            }
+
+                            // Clear pre-screen data
+                            clearPreScreenData(roomId);
+                            setActiveTorrentId(null);
+                            console.log('Download finished and files picked automatically');
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error('Torrent progress poll failed:', err);
+                // If the torrent is gone from the backend, stop polling
+                // This might happen if user deletes it from Download Manager
+                setActiveTorrentId(null);
+            }
+        }, 1000);
+
+        return () => clearInterval(interval);
+    }, [activeTorrentId, roomId, _myMembership, downloadingDir, targetMovieTitle, token]);
 
     // Hidden file input ref for browser fallback
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -787,6 +878,23 @@ export function RoomPage() {
                                     <button className="btn btn-primary" onClick={handleSelectFile}>
                                         Choose File
                                     </button>
+
+                                    {activeTorrentId !== null && dlProgress && (
+                                        <div style={{ marginTop: '24px', width: '100%', padding: '20px', backgroundColor: 'rgba(255, 255, 255, 0.05)', borderRadius: '12px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                                <span style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--primary)' }}>Downloading Movie...</span>
+                                                <span style={{ color: 'var(--primary)', fontWeight: 700, fontSize: '0.85rem' }}>{(dlProgress.progress_pct ?? 0).toFixed(1)}%</span>
+                                            </div>
+                                            <div className="torrent-progress-track" style={{ height: '8px', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '4px', overflow: 'hidden' }}>
+                                                <div className="torrent-progress-bar" style={{ width: `${Math.min(dlProgress.progress_pct ?? 0, 100)}%`, height: '100%', background: 'var(--gradient-primary)', transition: 'width 0.3s ease' }} />
+                                            </div>
+                                            <div style={{ display: 'flex', gap: '12px', marginTop: '10px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                                <span>{formatBytes(dlProgress.downloaded_bytes)} / {formatBytes(dlProgress.total_bytes)}</span>
+                                                <span style={{ color: 'var(--success)' }}>↓ {dlProgress.download_speed.toFixed(1)} MB/s</span>
+                                            </div>
+                                            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '8px' }}>The room will automatically prepare once the download finishes.</p>
+                                        </div>
+                                    )}
                                     {isAdmin && (
                                         <div style={{ marginTop: '20px', width: '100%', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                             <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Or start a YouTube Watch Party</div>

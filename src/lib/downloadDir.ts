@@ -28,8 +28,12 @@ export function buildMovieDownloadDir(baseDir: string, movieTitle: string): stri
 /* ---------- Pre-screen data ---------- */
 
 export interface PreScreenData {
-    filePath: string;
+    filePath?: string;
     subtitlePath?: string;
+    torrentId?: number;
+    magnetLink?: string;
+    downloadDir?: string;
+    movieTitle?: string;
 }
 
 export function getPreScreenData(roomId: string): PreScreenData | null {

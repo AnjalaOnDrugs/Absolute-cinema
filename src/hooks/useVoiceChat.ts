@@ -173,6 +173,10 @@ export function useVoiceChat(
 
         setIsConnecting(true);
         try {
+            if (!AGORA_APP_ID) {
+                throw new Error('AGORA_APP_ID is missing from environment variables');
+            }
+
             // Convert our string userId to a numeric UID for Agora
             const numericUid = stringToNumericUid(userId);
 
@@ -184,6 +188,10 @@ export function useVoiceChat(
                 channelName: roomId,
                 uid: numericUid,
             });
+
+            if (!agoraToken) {
+                throw new Error('Failed to generate Agora token');
+            }
 
             const client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
             clientRef.current = client;
@@ -246,15 +254,24 @@ export function useVoiceChat(
             setIsInVoice(true);
             setIsMuted(false);
             setIsDeafened(false);
-        } catch (err) {
+        } catch (err: any) {
             console.error('Failed to join voice chat:', err);
+            // Help diagnose production issues
+            if (import.meta.env.PROD) {
+                // You might want to use a toast notification here instead of alert
+                alert(`Voice Chat Error: ${err?.message || String(err)}`);
+            }
+
             // Cleanup on failure
             if (localTrackRef.current) {
-                localTrackRef.current.close();
+                try { localTrackRef.current.close(); } catch { /* ignore */ }
                 localTrackRef.current = null;
             }
             if (clientRef.current) {
-                try { await clientRef.current.leave(); } catch { /* ignore */ }
+                try {
+                    clientRef.current.removeAllListeners();
+                    await clientRef.current.leave();
+                } catch { /* ignore */ }
                 clientRef.current = null;
             }
         } finally {

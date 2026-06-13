@@ -62,6 +62,28 @@ export const VideoPlayer = forwardRef<any, VideoPlayerProps>(({
 
     const Player = ReactPlayer as any;
 
+    const [ytError, setYtError] = useState<boolean>(false);
+    const isTauri = !!(window as any).__TAURI_INTERNALS__;
+
+    useEffect(() => {
+        setYtError(false);
+    }, [src]);
+
+    const handleOpenInBrowser = useCallback(async () => {
+        if (!src) return;
+        if (isTauri) {
+            try {
+                const { openUrl } = await import('@tauri-apps/plugin-opener');
+                await openUrl(src);
+            } catch (err) {
+                console.error("Failed to open URL in browser via Tauri opener:", err);
+                window.open(src, '_blank');
+            }
+        } else {
+            window.open(src, '_blank');
+        }
+    }, [src, isTauri]);
+
     // Determine source type early — used by hover preview, refs, and controls
     const isYoutube = src ? /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.?be)\/.+$/.test(src) : false;
 
@@ -476,66 +498,107 @@ export const VideoPlayer = forwardRef<any, VideoPlayerProps>(({
         >
             {/* ... video ... */}
             {isYoutube ? (
-                <div className="custom-player-video" onClick={togglePlay}>
-                    <div style={{ pointerEvents: 'none', width: '100%', height: '100%' }}>
-                        <Player
-                            ref={reactPlayerRef}
-                            src={src || undefined}
-                            width="100%"
-                            height="100%"
-                            playing={isPlaying}
-                            volume={isMuted ? 0 : volume}
-                            onTimeUpdate={(e: any) => {
-                                if (reactPlayerRef.current) {
-                                    const time = reactPlayerRef.current.currentTime;
-                                    setCurrentTime(time);
-                                    // Update subtitle cue for YouTube videos
-                                    if (cues.length > 0) {
-                                        const active = cues.find(c => time >= c.start && time <= c.end);
-                                        setActiveSubtitle(active ? active.text : null);
-                                    }
-                                }
-                                if (onTimeUpdate) onTimeUpdate();
-                            }}
-                            onDurationChange={(e: any) => {
-                                const d = e?.currentTarget?.duration || reactPlayerRef.current?.duration;
-                                if (d) setDuration(d);
-                            }}
-                            onPlay={() => {
-                                setIsPlaying(true);
-                                if (onPlay) onPlay();
-                                // Fetch available quality levels when video starts playing
-                                try {
-                                    const ytApi = (reactPlayerRef.current as any)?.api;
-                                    if (ytApi?.getAvailableQualityLevels) {
-                                        const levels = ytApi.getAvailableQualityLevels();
-                                        if (levels && levels.length > 0) {
-                                            setYtAvailableQualities(levels);
+                <div className="custom-player-video" onClick={ytError ? undefined : togglePlay}>
+                    {ytError ? (
+                        <div className="yt-fallback-container" onClick={(e) => e.stopPropagation()}>
+                            <div className="yt-fallback-card">
+                                <div className="yt-fallback-icon">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                                        <line x1="12" y1="9" x2="12" y2="13"/>
+                                        <line x1="12" y1="17" x2="12.01" y2="17"/>
+                                    </svg>
+                                </div>
+                                <h3 className="yt-fallback-title">Playback Restricted</h3>
+                                <p className="yt-fallback-message">
+                                    This YouTube video cannot be played directly inside the app.
+                                    This is usually due to age restrictions or embedding limitations set by the owner.
+                                </p>
+                                <div className="yt-fallback-actions">
+                                    <button className="yt-fallback-btn yt-fallback-btn-primary" onClick={handleOpenInBrowser}>
+                                        <svg viewBox="0 0 24 24" style={{ width: '16px', height: '16px' }} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                                            <polyline points="15 3 21 3 21 9"/>
+                                            <line x1="10" y1="14" x2="21" y2="3"/>
+                                        </svg>
+                                        Open in Browser
+                                    </button>
+                                    {onFixIssues && (
+                                        <button className="yt-fallback-btn yt-fallback-btn-secondary" onClick={onFixIssues}>
+                                            <svg viewBox="0 0 24 24" style={{ width: '16px', height: '16px' }} fill="currentColor">
+                                                <path d="M17.485 17.512l1.631 3.488H4.884l1.631-3.488H17.485zM11.973 1.012c.119 0 .237.015.351.045l1.696 4.607h-4.093l1.696-4.607c.113-.03.231-.045.35-.045zm3.179 10.0h3.18l1.631 3.5h-11.232l1.631-3.5h3.179l-1.611-4.38h4.834l-1.612 4.38zm-6.358 0h3.179l1.612-4.38H5.614l1.612 4.38h3.179z"/>
+                                            </svg>
+                                            Open in VLC
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <div style={{ pointerEvents: 'none', width: '100%', height: '100%' }}>
+                            <Player
+                                ref={reactPlayerRef}
+                                src={src || undefined}
+                                width="100%"
+                                height="100%"
+                                playing={isPlaying}
+                                volume={isMuted ? 0 : volume}
+                                onError={() => {
+                                    console.warn('YouTube error caught by ReactPlayer');
+                                    setYtError(true);
+                                }}
+                                onTimeUpdate={(e: any) => {
+                                    if (reactPlayerRef.current) {
+                                        const time = reactPlayerRef.current.currentTime;
+                                        setCurrentTime(time);
+                                        // Update subtitle cue for YouTube videos
+                                        if (cues.length > 0) {
+                                            const active = cues.find(c => time >= c.start && time <= c.end);
+                                            setActiveSubtitle(active ? active.text : null);
                                         }
                                     }
-                                } catch (e) { /* ignore */ }
-                            }}
-                            onPause={() => {
-                                setIsPlaying(false);
-                                if (onPause) onPause();
-                            }}
-                            onSeeked={() => {
-                                if (onSeeked) onSeeked();
-                            }}
-                            config={{
-                                youtube: {
-                                    controls: 0,
-                                    disablekb: 1,
-                                    fs: 0,
-                                    modestbranding: 1,
-                                    rel: 0,
-                                    showinfo: 0,
-                                    iv_load_policy: 3,
-                                    cc_load_policy: 1
-                                } as any
-                            }}
-                        />
-                    </div>
+                                    if (onTimeUpdate) onTimeUpdate();
+                                }}
+                                onDurationChange={(e: any) => {
+                                    const d = e?.currentTarget?.duration || reactPlayerRef.current?.duration;
+                                    if (d) setDuration(d);
+                                }}
+                                onPlay={() => {
+                                    setIsPlaying(true);
+                                    if (onPlay) onPlay();
+                                    // Fetch available quality levels when video starts playing
+                                    try {
+                                        const ytApi = (reactPlayerRef.current as any)?.api;
+                                        if (ytApi?.getAvailableQualityLevels) {
+                                            const levels = ytApi.getAvailableQualityLevels();
+                                            if (levels && levels.length > 0) {
+                                                setYtAvailableQualities(levels);
+                                            }
+                                        }
+                                    } catch (e) { /* ignore */ }
+                                }}
+                                onPause={() => {
+                                    setIsPlaying(false);
+                                    if (onPause) onPause();
+                                }}
+                                onSeeked={() => {
+                                    if (onSeeked) onSeeked();
+                                }}
+                                config={{
+                                    youtube: {
+                                        controls: 0,
+                                        disablekb: 1,
+                                        fs: 0,
+                                        modestbranding: 1,
+                                        rel: 0,
+                                        showinfo: 0,
+                                        iv_load_policy: 3,
+                                        cc_load_policy: 1
+                                    } as any
+                                }}
+                            />
+                        </div>
+                    )}
                 </div>
             ) : (
                 <video

@@ -15,6 +15,8 @@
     "@tauri-apps/plugin-dialog": "^2.6.0",
     "@tauri-apps/plugin-fs": "^2.4.5",
     "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-updater": "^2.10.1",
     "agora-extension-ai-denoiser": "^1.1.0",
     "agora-rtc-sdk-ng": "^4.24.2",
     "agora-token": "^2.0.5",
